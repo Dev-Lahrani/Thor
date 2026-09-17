@@ -1,346 +1,149 @@
 # 🔌 API Reference
 
-This document details all external APIs used by the application.
+This document describes the feed layer in `src/services/api.ts` — the only
+module that talks to the outside world. Everything else in the app consumes
+the normalized results it returns.
 
-## Overview
+## External data sources
 
-The application uses three main data sources, all of which are **free and require no API key**:
+All sources are free and require **no API keys**. CORS status verified
+2026-09.
 
-| API | Purpose | Rate Limit |
-|-----|---------|------------|
-| USGS Earthquake API | Real-time earthquake data | Unlimited |
-| NASA EONET | Natural events (wildfires, storms, etc.) | Unlimited |
-| Open-Meteo | Weather and air quality data | 10,000/day |
+| Source | Feed URL | Data | Direct CORS | Cache |
+|--------|----------|------|-------------|-------|
+| [NIST NVD](https://nvd.nist.gov/) | `services.nvd.nist.gov/rest/json/cves/2.0` | CVEs published in the last 3 days | ✅ | 15 min (in-memory) |
+| [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | `cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` | Actively exploited vulns (180-day window) | ❌ relay | 30 min |
+| [abuse.ch Feodo Tracker](https://feodotracker.abuse.ch/) | `feodotracker.abuse.ch/downloads/ipblocklist.json` | Botnet C2 servers | ❌ relay | 30 min |
+| [DShield / ISC](https://isc.sans.edu/) | `isc.sans.edu/api/topips/records/200?json` | Top attacking IPs + report counts | ✅ | 60 min |
+| [OpenPhish](https://openphish.com/) | `raw.githubusercontent.com/openphish/public_feed/.../feed.txt` | Phishing URLs | ✅ | 30 min |
+| [HaveIBeenPwned](https://haveibeenpwned.com/) | `haveibeenpwned.com/api/v3/breaches` | Public breach catalog | ✅ | 6 h |
+| [ipwho.is](https://ipwho.is/) | `ipwho.is/{ip}` | IOC geolocation | ✅ | 7 days (localStorage) |
 
----
+> ⚠️ The HIBP API is free for browser use but is designed for *per-breach*
+> lookups; hammering the full catalog endpoint is not. Thor caches it
+> aggressively (6 h) and only fetches it client-side, once per session, per
+> browser.
 
-## USGS Earthquake API
+## CORS relay
 
-### Endpoint
-```
-https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/
-```
+Two feeds (CISA KEV, Feodo) don't send `access-control-allow-origin` headers,
+so browsers block direct fetches. Thor routes those through a public read
+relay (`r.jina.ai`) via `relayFetch()`, which:
 
-### Feeds Used
+1. Tries the relay first and strips the relay's metadata prefix (the feed JSON
+   is sliced from the first `{` or `[`).
+2. Validates the parsed shape with a caller-supplied predicate.
+3. Falls back to a direct fetch if the relay fails (covers future CORS-policy
+   changes).
+4. Returns `null` if both paths fail — the feed then reports `error` in
+   `feedStatus`.
 
-| Feed | Update Frequency | Description |
-|------|------------------|-------------|
-| `all_hour.geojson` | Every minute | All earthquakes, past hour |
-| `all_day.geojson` | Every minute | All earthquakes, past day |
-| `significant_week.geojson` | Every 15 min | Significant earthquakes, past week |
+## Public API
 
-### Response Format
+All functions return `Promise<T[]>`. On failure they resolve to `[]` (empty
+feed) rather than rejecting, with the exception of `fetchThreatFeeds`, which
+also reports per-feed status.
 
-```json
-{
-  "type": "FeatureCollection",
-  "features": [
-    {
-      "type": "Feature",
-      "properties": {
-        "mag": 4.5,
-        "place": "10km NE of City",
-        "time": 1702828800000,
-        "url": "https://earthquake.usgs.gov/...",
-        "title": "M 4.5 - 10km NE of City",
-        "alert": "green",
-        "tsunami": 0
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [-122.5, 37.8, 10.0]
-      }
-    }
-  ]
+### `fetchThreatFeeds(): Promise<ThreatFeedResult>`
+
+The orchestrator. Fetches all six feeds in parallel, geolocates IP-based IOCs,
+and assembles the unified map-event list.
+
+```ts
+interface ThreatFeedResult {
+  events: ThreatEvent[];       // unified map events (KEV + IPs + critical CVEs)
+  cves: CveRecord[];           // normalized NVD records
+  kev: KevEntry[];             // normalized KEV entries (≤180 days old)
+  iocs: IocIndicator[];        // C2 IPs + attacker IPs + phishing URLs (geo-attached)
+  breaches: BreachRecord[];    // HIBP breach catalog
+  feedStatus: FeedStatusMap;   // { nvd|kev|feodo|dshield|openphish|hibp: 'ok'|'error' }
 }
 ```
 
-### Severity Mapping
+Event assembly rules:
 
-| Magnitude | Severity |
-|-----------|----------|
-| ≥ 7.0 | Critical |
-| 5.0 - 6.9 | High |
-| 3.0 - 4.9 | Medium |
-| < 3.0 | Low |
+- **KEV entries** (top 120) → severity derived from age (`≤30d` critical,
+  `≤90d` high, else medium); coordinates from a deterministic per-CVE hash
+  scatter; `approxLocation: true`.
+- **C2 IPs** → `critical` severity, real coordinates from geolocation.
+- **Attacker IPs** → `high` severity, `eventCount` = DShield report count.
+- **Phishing URLs** → never map events; they live in the Intel page table only.
+- **Critical/high CVEs** (top 60) → hash-scattered "global pressure" markers,
+  `magnitudeLabel` = `CVSS x.x`.
 
-### Documentation
-- [USGS API Documentation](https://earthquake.usgs.gov/earthquakes/feed/)
-- [GeoJSON Summary Format](https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php)
+### `fetchRecentCves(days = 3, maxResults = 150): Promise<CveRecord[]>`
 
----
+Queries the NVD 2.0 API for CVEs published in the last `days`, up to
+`maxResults`. Cached in memory for 15 minutes.
 
-## NASA EONET API
+### `normalizeNvdCve(item: NvdCveItem): CveRecord | null`
 
-### Endpoint
-```
-https://eonet.gsfc.nasa.gov/api/v3/events
-```
+Converts one raw NVD item into a `CveRecord`:
 
-### Parameters
+- Prefers **CVSS v3.1**, then v3.0, then v2.
+- Extracts the English description, vendors (from CPE criteria), CWE, and the
+  first 5 reference URLs.
+- Returns `null` when no CVSS metrics exist (the record is skipped).
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `status` | string | Filter by status: "open" or "closed" |
-| `limit` | number | Maximum number of events to return |
-| `days` | number | Events from past N days |
+### `fetchKevEntries(): Promise<KevEntry[]>`
 
-### Example Request
-```
-https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=50
-```
+Fetches the KEV catalog via `relayFetch`, keeps entries added in the last 180
+days, sorts newest-first, and maps `knownRansomwareCampaignUse` to
+`'Known' | 'Unknown'`.
 
-### Response Format
+### `fetchC2Ips(): Promise<IocIndicator[]>`
 
-```json
-{
-  "events": [
-    {
-      "id": "EONET_1234",
-      "title": "Wildfire - California",
-      "categories": [
-        {
-          "id": "wildfires",
-          "title": "Wildfires"
-        }
-      ],
-      "geometry": [
-        {
-          "date": "2024-12-15T00:00:00Z",
-          "type": "Point",
-          "coordinates": [-121.5, 38.5]
-        }
-      ]
-    }
-  ]
-}
-```
+Feodo botnet C2 IP blocklist → `IocIndicator[]` with `type: 'c2-ip'` and
+`confidence: 'high'`.
 
-### Event Categories
+### `fetchAttackerIps(): Promise<IocIndicator[]>`
 
-| Category ID | Description |
-|-------------|-------------|
-| `wildfires` | Active wildfires |
-| `severeStorms` | Hurricanes, typhoons, cyclones |
-| `volcanoes` | Volcanic activity |
-| `floods` | Flooding events |
-| `drought` | Drought conditions |
-| `landslides` | Landslide events |
-| `seaLakeIce` | Sea and lake ice events |
-| `earthquakes` | Earthquakes (we use USGS instead) |
+DShield top-200 attacking IPs → `IocIndicator[]` with `type: 'attacker-ip'`.
+The response shape is validated (`isDshieldSourceArray`) before use; unexpected
+payloads are skipped rather than rendered as garbage.
 
-### Documentation
-- [EONET API Documentation](https://eonet.gsfc.nasa.gov/docs/v3)
+### `fetchPhishingUrls(limit = 40): Promise<IocIndicator[]>`
 
----
+OpenPhish plain-text URL feed, first `limit` entries → `IocIndicator[]` with
+`type: 'phishing-url'`.
 
-## Open-Meteo API
+### `fetchBreaches(): Promise<BreachRecord[]>`
 
-### Weather Endpoint
-```
-https://api.open-meteo.com/v1/forecast
-```
+HIBP v3 breach catalog → `BreachRecord[]`, sorted newest-added first, HTML
+stripped from descriptions. Cached 6 hours.
 
-### Air Quality Endpoint
-```
-https://air-quality-api.open-meteo.com/v1/air-quality
-```
+### `geolocateIps(ips: string[]): Promise<Record<string, GeoEntry>>`
 
-### Weather Parameters
+Cache-first geolocation through `ipwho.is`:
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `latitude` | float | Location latitude |
-| `longitude` | float | Location longitude |
-| `current` | string | Current weather variables |
-| `timezone` | string | Timezone for timestamps |
+- 7-day `localStorage` cache (`thor_geo_cache_v1`, capped at 5,000 entries).
+- Misses are fetched in **batches of 10** (`Promise.allSettled`) to stay
+  rate-limit friendly.
+- Returns `{ ip → { country, countryName, city, coordinates, asn } }`.
 
-### Example Weather Request
-```
-https://api.open-meteo.com/v1/forecast?latitude=40.7128&longitude=-74.006&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m
-```
+### `cvssToSeverity(score: number): SeverityLevel`
 
-### Weather Response Format
+CVSS bands:
 
-```json
-{
-  "current": {
-    "temperature_2m": 22.5,
-    "relative_humidity_2m": 65,
-    "weather_code": 3,
-    "wind_speed_10m": 12.5
-  },
-  "current_units": {
-    "temperature_2m": "°C",
-    "relative_humidity_2m": "%",
-    "weather_code": "wmo code",
-    "wind_speed_10m": "km/h"
-  }
-}
-```
+| Score | Severity |
+|-------|----------|
+| ≥ 9.0 | `critical` |
+| 7.0–8.9 | `high` |
+| 4.0–6.9 | `medium` |
+| < 4.0 | `low` |
 
-### Weather Codes (WMO)
+## Cache behavior
 
-| Code | Description |
-|------|-------------|
-| 0 | Clear sky |
-| 1, 2, 3 | Partly cloudy |
-| 45, 48 | Fog |
-| 51, 53, 55 | Drizzle |
-| 61, 63, 65 | Rain |
-| 71, 73, 75 | Snow |
-| 80, 81, 82 | Rain showers |
-| 95, 96, 99 | Thunderstorm |
+- **In-memory TTL cache** (`cached()`) per feed, keyed by parameters — repeated
+  calls within the TTL return the same promise result without re-fetching.
+- **Geo cache** in `localStorage` — survives reloads; stale entries (older than
+  7 days) are re-fetched; the cache evicts oldest-first past 5,000 entries.
 
-### Air Quality Request
-```
-https://air-quality-api.open-meteo.com/v1/air-quality?latitude=40.7128&longitude=-74.006&current=us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide
-```
+## Error handling contract
 
-### Air Quality Response Format
-
-```json
-{
-  "current": {
-    "us_aqi": 45,
-    "pm2_5": 12.3,
-    "pm10": 25.6,
-    "ozone": 45.2,
-    "nitrogen_dioxide": 18.7
-  }
-}
-```
-
-### AQI Levels
-
-| AQI Range | Level | Color |
-|-----------|-------|-------|
-| 0-50 | Good | Green |
-| 51-100 | Moderate | Yellow |
-| 101-150 | Unhealthy for Sensitive Groups | Orange |
-| 151-200 | Unhealthy | Red |
-| 201-300 | Very Unhealthy | Purple |
-| 301+ | Hazardous | Maroon |
-
-### Documentation
-- [Open-Meteo Weather API](https://open-meteo.com/en/docs)
-- [Open-Meteo Air Quality API](https://open-meteo.com/en/docs/air-quality-api)
-
----
-
-## Rate Limiting & Caching
-
-### Caching Strategy
-
-To avoid hitting rate limits, the application implements caching:
-
-```typescript
-const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
-
-interface CacheEntry<T> {
-  data: T;
-  timestamp: number;
-}
-
-const getCached = <T>(key: string): T | null => {
-  const entry = localStorage.getItem(key);
-  if (!entry) return null;
-  
-  const { data, timestamp } = JSON.parse(entry) as CacheEntry<T>;
-  if (Date.now() - timestamp > CACHE_DURATION) {
-    localStorage.removeItem(key);
-    return null;
-  }
-  
-  return data;
-};
-
-const setCache = <T>(key: string, data: T): void => {
-  const entry: CacheEntry<T> = {
-    data,
-    timestamp: Date.now()
-  };
-  localStorage.setItem(key, JSON.stringify(entry));
-};
-```
-
-### Request Batching
-
-For weather data, we batch requests to reduce API calls:
-
-```typescript
-// Instead of 76 separate requests for 76 cities,
-// we could use Open-Meteo's batch endpoint (future enhancement)
-```
-
----
-
-## Error Handling
-
-### API Error Types
-
-| Error | Cause | Handling |
-|-------|-------|----------|
-| 429 | Rate limit exceeded | Show cached data or "unavailable" |
-| 500 | Server error | Retry with exponential backoff |
-| Network | No connection | Show offline message |
-
-### Example Error Handling
-
-```typescript
-const fetchWeather = async (lat: number, lon: number) => {
-  try {
-    const response = await fetch(buildWeatherUrl(lat, lon));
-    
-    if (response.status === 429) {
-      console.warn('Rate limited, using cached data');
-      return getCached('weather') || null;
-    }
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    
-    const data = await response.json();
-    setCache('weather', data);
-    return data;
-    
-  } catch (error) {
-    console.error('Weather fetch failed:', error);
-    return getCached('weather') || null;
-  }
-};
-```
-
----
-
-## Adding New APIs
-
-To add a new data source:
-
-1. Create a new function in `src/services/api.ts`:
-
-```typescript
-export const fetchNewDataSource = async (): Promise<DataType[]> => {
-  const response = await fetch(NEW_API_URL);
-  const data = await response.json();
-  return transformData(data);
-};
-```
-
-2. Add types in `src/types/index.ts`:
-
-```typescript
-interface NewDataType {
-  id: string;
-  // ... other fields
-}
-```
-
-3. Call from your component:
-
-```typescript
-useEffect(() => {
-  fetchNewDataSource().then(setData);
-}, []);
-```
+- Feed fetchers **never throw**; they return `[]` and log with a `[Thor]`
+  prefix.
+- `fetchThreatFeeds` tracks per-feed status so the UI can show a degraded-mode
+  banner instead of silently rendering nothing.
+- `relayFetch` validates parsed JSON with a caller-supplied predicate before
+  trusting it.

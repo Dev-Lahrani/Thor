@@ -1,352 +1,124 @@
 # 🎨 Customization
 
-This guide explains how to customize the appearance and behavior of the application.
+Thor is designed to be easy to restyle and re-point. Most customizations are
+one-file changes.
 
-## Theme Customization
+## Theme colors
 
-### Color Palette
-
-The application uses a custom color palette defined in `src/index.css`:
+All colors are Tailwind CSS v4 `@theme` tokens in `src/index.css`:
 
 ```css
 @theme {
-  --color-neon-cyan: #00f5ff;
-  --color-neon-purple: #bf00ff;
-  --color-neon-red: #ff0040;
-  --color-neon-green: #00ff88;
-  --color-neon-yellow: #ffff00;
-  --color-dark-bg: #0a0a0f;
-  --color-dark-panel: rgba(0, 0, 0, 0.7);
+  --color-cyber-dark: #080810;        /* page background */
+  --color-cyber-darker: #040408;      /* deeper panels */
+  --color-cyber-card: rgba(12, 12, 20, 0.85);
+  --color-cyber-border: rgba(120, 120, 180, 0.15);
+  --color-cyber-surface: rgba(18, 18, 30, 0.9);
+
+  --color-neon-cyan: #00d4ff;         /* primary accent */
+  --color-neon-purple: #a855f7;       /* secondary accent */
+  --color-neon-red: #ef4444;
+  --color-neon-orange: #f97316;
+  --color-neon-yellow: #eab308;
+  --color-neon-green: #22c55e;
+  --color-neon-blue: #3b82f6;
+  --color-neon-pink: #ec4899;
 }
 ```
 
-### Changing Colors
+Change a token and every `bg-neon-cyan`, `text-neon-red`, `border-*` utility
+updates automatically.
 
-To change the color scheme, modify the CSS variables:
+**Typography** — font stacks are tokens too:
 
 ```css
-/* For a blue/teal theme */
-@theme {
-  --color-neon-cyan: #00bcd4;
-  --color-neon-purple: #3f51b5;
-  --color-neon-red: #f44336;
-  --color-neon-green: #4caf50;
-}
+--font-family-sans: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+--font-family-mono: 'JetBrains Mono', ui-monospace, monospace;
 ```
 
-### Using Colors in Components
+## Threat category colors
 
-```tsx
-// Tailwind classes
-<div className="text-neon-cyan bg-neon-purple/20">
-  Styled content
-</div>
+Map markers, badges, and filter chips share one source of truth:
+`CATEGORY_INFO` in `src/utils/helpers.ts`.
 
-// Inline styles
-<div style={{ color: 'var(--color-neon-cyan)' }}>
-  Styled content
-</div>
-```
-
----
-
-## Glassmorphism Effects
-
-### Default Glass Panel
-
-```css
-.glass-panel {
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(0, 245, 255, 0.1);
-  border-radius: 12px;
-}
-```
-
-### Customizing Glass Effect
-
-```css
-/* Lighter glass */
-.glass-panel-light {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-/* Colored glass */
-.glass-panel-purple {
-  background: rgba(191, 0, 255, 0.2);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(191, 0, 255, 0.3);
-}
-```
-
----
-
-## Animation Customization
-
-### Glow Effects
-
-```css
-/* Neon glow */
-.neon-glow {
-  box-shadow: 
-    0 0 5px var(--color-neon-cyan),
-    0 0 10px var(--color-neon-cyan),
-    0 0 20px var(--color-neon-cyan);
-}
-
-/* Pulse animation */
-@keyframes neon-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-
-.animate-neon-pulse {
-  animation: neon-pulse 2s ease-in-out infinite;
-}
-```
-
-### Marker Animations
-
-```css
-/* Disaster marker pulse */
-@keyframes marker-pulse {
-  0% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.5); opacity: 0.5; }
-  100% { transform: scale(2); opacity: 0; }
-}
-```
-
----
-
-## Layout Customization
-
-### Map/Sidebar Ratio
-
-Default is 70/30 split. To change:
-
-```tsx
-// In App.tsx
-<div className="flex">
-  {/* Change w-[70%] to your preferred width */}
-  <div className="w-[60%]">
-    <RealWorldMap />
-  </div>
-  {/* Change w-[30%] accordingly */}
-  <div className="w-[40%]">
-    <Sidebar />
-  </div>
-</div>
-```
-
-### Responsive Breakpoints
-
-```tsx
-// Stack on mobile, split on desktop
-<div className="flex flex-col lg:flex-row">
-  <div className="w-full lg:w-[70%]">
-    <RealWorldMap />
-  </div>
-  <div className="w-full lg:w-[30%]">
-    <Sidebar />
-  </div>
-</div>
-```
-
----
-
-## Data Refresh Customization
-
-### Change Refresh Interval
-
-```tsx
-// In App.tsx
-const REFRESH_INTERVAL = 60000; // 60 seconds (default: 30000)
-
-useEffect(() => {
-  const interval = setInterval(fetchDisasters, REFRESH_INTERVAL);
-  return () => clearInterval(interval);
-}, []);
-```
-
-### Change Cache Duration
-
-```tsx
-// In services/api.ts
-const CACHE_DURATION = 60 * 60 * 1000; // 1 hour (default: 30 min)
-```
-
----
-
-## Adding Custom Cities
-
-### Weather Page Cities
-
-Edit `src/pages/WeatherPage.tsx`:
-
-```typescript
-const WORLD_CITIES = [
-  // Add your cities
-  { name: 'Your City', lat: 12.34, lon: 56.78, country: 'Country', region: 'Region' },
-  // ... existing cities
-];
-```
-
-### Air Quality Page Cities
-
-Edit `src/pages/AirQualityPage.tsx`:
-
-```typescript
-const WORLD_CITIES = [
-  // Add your cities
-  { name: 'Your City', lat: 12.34, lon: 56.78, country: 'Country', region: 'Region' },
-  // ... existing cities
-];
-```
-
----
-
-## Map Customization
-
-### Country Colors
-
-```tsx
-// In RealWorldMap.tsx
-const getCountryFill = (countryId: string) => {
-  // Custom colors for specific countries
-  const customColors: Record<string, string> = {
-    'US': '#1a1a2e',
-    'CN': '#16213e',
-    // Add more...
-  };
-  return customColors[countryId] || '#0f0f1a';
+```ts
+export const CATEGORY_INFO: Record<ThreatCategory, CategoryInfo> = {
+  kev:         { id: 'kev',         label: 'KEV Exploits', color: '#ef4444', ... },
+  maliciousIp: { id: 'maliciousIp', label: 'Malicious IPs', color: '#f97316', ... },
+  phishing:    { id: 'phishing',    label: 'Phishing',    color: '#ec4899', ... },
+  breach:      { id: 'breach',      label: 'Breaches',    color: '#a855f7', ... },
 };
 ```
 
-### Marker Styles
+The same module holds severity colors (`SEVERITY_COLORS`), map marker styles
+(`SEVERITY_MAP_COLORS`, pulse speeds in `ALERT_PULSE_SPEEDS`), and toast colors
+(`ALERT_COLORS`).
 
-```tsx
-// In RealWorldMap.tsx
-const getMarkerColor = (severity: string) => {
-  const colors = {
-    critical: '#ff0040',  // Red
-    high: '#ff6b00',      // Orange
-    medium: '#ffff00',    // Yellow
-    low: '#00ff88'        // Green
-  };
-  return colors[severity] || '#ffffff';
+> Note: category colors are also mirrored as CSS variables in `@theme`
+> (`--color-kev`, `--color-malicious-ip`, …) for utility-class use — keep the
+> two in sync if you change one.
+
+## Data feeds
+
+Every feed URL lives at the top of `src/services/api.ts`:
+
+```ts
+const NVD_API      = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
+const KEV_FEED     = 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json';
+const FEODO_FEED   = 'https://feodotracker.abuse.ch/downloads/ipblocklist.json';
+const OPENPHISH_FEED = 'https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt';
+const HIBP_API     = 'https://haveibeenpwned.com/api/v3/breaches';
+const DSHIELD_SOURCES = 'https://isc.sans.edu/api/topips/records/200?json';
+const GEO_API      = 'https://ipwho.is';
+const CORS_RELAY   = 'https://r.jina.ai/';
+```
+
+Adjust the knobs in the same file:
+
+| What | Where |
+|------|-------|
+| NVD window / result cap | `fetchRecentCves(days, maxResults)` — default `3` days, `150` results |
+| KEV recency window | `KEV_MAX_AGE_DAYS` — default `180` |
+| Phishing URL cap | `fetchPhishingUrls(limit)` — default `40` |
+| Feed cache TTLs | each fetch's `cached(key, ttlMs, ...)` call |
+| Geo cache TTL / size | `GEO_CACHE_TTL`, `GEO_CACHE_MAX_ENTRIES` |
+| KEV/CVE marker caps | `kev.slice(0, 120)` and the CVE `slice(0, 60)` in `fetchThreatFeeds` |
+
+## Settings defaults
+
+Defaults (and the persistence key) live at the top of
+`src/context/ThreatContext.tsx`:
+
+```ts
+export const DEFAULT_SETTINGS: UserSettings = {
+  notificationsEnabled: true,
+  soundEnabled: false,
+  autoRefresh: true,
+  refreshInterval: 300,            // seconds
+  minSeverityNotification: 'high',
 };
 ```
 
----
+Stored settings are merged over defaults on load, so adding a new setting
+field later won't break existing users' saved state.
 
-## Notification Customization
+## Layout & structure
 
-### Notification Sounds
+- **Pages** — add a new route in `src/main.tsx` and a nav item in
+  `Header.tsx` (`NAV_ITEMS`).
+- **Sidebar toggle** — the list/timeline view switcher is `sidebarView` in
+  context (`'list' | 'timeline'`).
+- **Toolbar** — buttons live in `pages/MapView.tsx` (globe, trends, stats,
+  export, settings toggles), all driven by context state.
 
-```tsx
-// Add audio notification
-const playNotificationSound = () => {
-  const audio = new Audio('/notification.mp3');
-  audio.volume = 0.5;
-  audio.play();
-};
+## Notification chime
 
-// In notification handler
-if (disaster.severity === 'critical') {
-  playNotificationSound();
-}
-```
+The alert sound is an embedded base64 WAV in `src/utils/audio.ts`
+(`NOTIFICATION_SOUND`). Replace the data-URL with any small audio asset; the
+provider preloads it once at mount.
 
-### Custom Notification Duration
+## App identity
 
-```tsx
-// In NotificationToast.tsx
-const AUTO_DISMISS_MS = 10000; // 10 seconds (default: 5000)
-```
-
----
-
-## Adding New Disaster Types
-
-### 1. Update Types
-
-```typescript
-// In types/index.ts
-type DisasterType = 
-  | 'earthquake' 
-  | 'wildfire' 
-  | 'volcano'
-  | 'storm'
-  | 'flood'
-  | 'tsunami'  // New type
-  | 'other';
-```
-
-### 2. Add Icon
-
-```tsx
-// In Sidebar.tsx or utils/helpers.ts
-const getDisasterIcon = (type: DisasterType) => {
-  const icons = {
-    earthquake: '🌍',
-    wildfire: '🔥',
-    volcano: '🌋',
-    storm: '🌪️',
-    flood: '🌊',
-    tsunami: '🌊',  // New icon
-    other: '⚠️'
-  };
-  return icons[type];
-};
-```
-
-### 3. Add Color
-
-```tsx
-const getDisasterColor = (type: DisasterType) => {
-  const colors = {
-    earthquake: '#ff6b6b',
-    wildfire: '#ff9500',
-    volcano: '#ff4757',
-    storm: '#5f27cd',
-    flood: '#0abde3',
-    tsunami: '#00cec9',  // New color
-    other: '#ffc048'
-  };
-  return colors[type];
-};
-```
-
----
-
-## Dark/Light Theme Toggle (Future)
-
-```tsx
-// Theme context
-const ThemeContext = createContext<{
-  theme: 'dark' | 'light';
-  toggleTheme: () => void;
-}>({
-  theme: 'dark',
-  toggleTheme: () => {}
-});
-
-// Theme provider
-const ThemeProvider: React.FC = ({ children }) => {
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
-  };
-  
-  return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
-      <div className={theme}>
-        {children}
-      </div>
-    </ThemeContext.Provider>
-  );
-};
-```
+- **HTML shell** — title/meta/favicon in `index.html`.
+- **App name** — `package.json` + the `Header` brand.
+- **Docs** — this folder; keep it in sync with code when you customize.

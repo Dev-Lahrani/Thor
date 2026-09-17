@@ -1,7 +1,28 @@
 {
   "name": "thor",
   "private": true,
-  "version": "3.0.0",
+  "version": "3.0.2",
+  "description": "Live, key-free cyber threat intelligence dashboard — KEV/CVE exploits, botnet C2, phishing, and breaches on a real-time map. No API keys, no backend, no telemetry.",
+  "license": "MIT",
+  "author": "Dev Lahrani (https://github.com/Dev-Lahrani)",
+  "homepage": "https://github.com/Dev-Lahrani/Thor#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dev-Lahrani/Thor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Dev-Lahrani/Thor/issues"
+  },
+  "keywords": [
+    "cybersecurity",
+    "threat-intelligence",
+    "cve",
+    "kev",
+    "dashboard",
+    "botnet",
+    "phishing",
+    "open-source"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",

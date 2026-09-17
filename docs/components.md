@@ -1,377 +1,200 @@
 # 🧩 Components
 
-This document provides detailed information about each React component in the application.
+Every React component in Thor, what it does, and its props. All components
+live in `src/components/` and are re-exported from `index.ts`.
 
-## Component Overview
+## Pages & shell
 
 | Component | Purpose | Location |
 |-----------|---------|----------|
-| `AnimatedWeatherIcon` | Animated SVG weather icons | `/components/` |
-| `DisasterTrends` | Charts and analytics | `/components/` |
-| `ExportModal` | Data export functionality | `/components/` |
-| `Footer` | App footer | `/components/` |
-| `Globe3D` | Three.js globe visualization | `/components/` |
-| `Header` | Navigation header | `/components/` |
-| `LoadingScreen` | Initial loading animation | `/components/` |
-| `NotificationToast` | Alert notifications | `/components/` |
-| `RealWorldMap` | Interactive SVG world map | `/components/` |
-| `SearchBar` | Location search | `/components/` |
-| `SettingsModal` | App settings | `/components/` |
-| `Sidebar` | Disaster list sidebar | `/components/` |
-| `StatsOverlay` | Statistics display | `/components/` |
-| `TimelineView` | Disaster timeline | `/components/` |
-| `Watchlist` | Favorites management | `/components/` |
-| `WeatherCompare` | City comparison tool | `/components/` |
+| `Layout` | App shell: header, sidebar, footer, global modals, loading screen | `pages/Layout.tsx` |
+| `MapView` | Route `/` — threat map + toolbar wiring | `pages/MapView.tsx` |
+| `VulnerabilitiesPage` | Route `/vulnerabilities` — CVE table + KEV cards | `pages/VulnerabilitiesPage.tsx` |
+| `ThreatIntelPage` | Route `/threat-intel` — C2 / attacker / phishing IOC tables | `pages/ThreatIntelPage.tsx` |
+| `DataBreachPage` | Route `/breaches` — HIBP breach catalog | `pages/DataBreachPage.tsx` |
 
----
+## Core components
 
-## AnimatedWeatherIcon
+### `Header`
 
-Displays animated SVG icons based on weather conditions.
+Top navigation bar: brand, nav links (Map / Vulns / Intel / Breaches),
+category filter toggles, manual refresh, last-updated timestamp.
 
-### Props
-
-```typescript
-interface AnimatedWeatherIconProps {
-  weatherCode: number;
-  size?: number;
+```ts
+interface HeaderProps {
+  filters: FilterState;
+  onFilterChange: (category: ThreatCategory) => void;
+  onRefresh: () => void;
+  lastUpdated: Date | null;
+  loading: boolean;
+  events: ThreatEvent[];
+  kevCount: number;
 }
 ```
 
-### Usage
+Filter toggles only render for categories that actually appear in the loaded
+events — phishing/breach entries are never emitted as map events, so their
+toggles would be dead UI.
 
-```tsx
-<AnimatedWeatherIcon weatherCode={3} size={48} />
-```
+### `ThreatMap`
 
-### Weather Code Mapping
+The centerpiece — an interactive SVG world map (equirectangular projection,
+TopoJSON land from `world-atlas`, viewBox `1000×500`):
 
-| Codes | Icon | Animation |
-|-------|------|-----------|
-| 0 | Sun | Spinning rays |
-| 1-3 | Partial clouds | Floating clouds |
-| 45, 48 | Fog | Drifting layers |
-| 51-55, 61-65 | Rain | Falling drops |
-| 71-75 | Snow | Drifting flakes |
-| 80-82 | Rain showers | Heavy drops |
-| 95-99 | Thunderstorm | Lightning flash |
+- Zoom/pan with native non-passive wheel handling
+- Category-colored, severity-pulsed markers
+- Hash-scatter "approx" markers (dashed stroke + badge) for KEV/CVE events
+- Clickable markers → detail panel (CVSS, ASN, country, source links)
+- `mapFocusCoords` support for cross-page "show on map" jumps
 
----
-
-## DisasterTrends
-
-Interactive charts showing disaster trends and analytics.
-
-### Props
-
-```typescript
-interface DisasterTrendsProps {
-  disasters: Disaster[];
-  onClose: () => void;
+```ts
+interface ThreatMapProps {
+  events: ThreatEvent[];
+  selectedEvent: ThreatEvent | null;
+  onSelectEvent: (event: ThreatEvent) => void;
+  mapFocusCoords?: [number, number] | null;
 }
 ```
 
-### Features
+### `Globe3D`
 
-- **Daily Frequency Chart** - Area chart showing disasters per day
-- **Category Breakdown** - Pie chart of disaster types
-- **Magnitude Distribution** - Bar chart for earthquakes
+Three.js (@react-three/fiber + drei) rotating globe with the same signals:
+lat/lon → 3D vector conversion, glowing threat markers, stars + grid. Lazy
+mounted from a toolbar toggle to keep the initial bundle lean.
 
-### Usage
-
-```tsx
-<DisasterTrends 
-  disasters={disasters} 
-  onClose={() => setShowTrends(false)} 
-/>
-```
-
----
-
-## Globe3D
-
-Interactive 3D globe using Three.js with disaster markers.
-
-### Props
-
-```typescript
+```ts
 interface Globe3DProps {
-  disasters: Disaster[];
+  events: ThreatEvent[];
   onClose: () => void;
+  selectedEvent: ThreatEvent | null;
+  onSelectEvent: (event: ThreatEvent) => void;
 }
 ```
 
-### Features
+### `Sidebar`
 
-- **Orbit Controls** - Rotate and zoom the globe
-- **Disaster Markers** - Color-coded by severity
-- **Fullscreen Mode** - Toggle fullscreen view
-- **Auto-rotation** - Optional slow rotation
+The right-hand event list: category-filtered signals, severity badges,
+click-to-select, count summary. Toggles with `TimelineView`.
 
-### Dependencies
-
-- `three`
-- `@react-three/fiber`
-- `@react-three/drei`
-
-### Usage
-
-```tsx
-{show3DGlobe && (
-  <Globe3D 
-    disasters={disasters} 
-    onClose={() => setShow3DGlobe(false)} 
-  />
-)}
-```
-
----
-
-## Header
-
-Navigation header with app title and nav links.
-
-### Features
-
-- App logo and title
-- Navigation links (Dashboard, Weather, Air Quality)
-- Responsive mobile menu
-
-### Usage
-
-```tsx
-<Header />
-```
-
----
-
-## RealWorldMap
-
-Interactive SVG world map with disaster markers.
-
-### Props
-
-```typescript
-interface RealWorldMapProps {
-  disasters: Disaster[];
-  selectedDisaster: Disaster | null;
-  onDisasterSelect: (disaster: Disaster | null) => void;
-  onDisasterHover: (disaster: Disaster | null) => void;
-}
-```
-
-### Features
-
-- **SVG Countries** - All world countries with hover effects
-- **Disaster Markers** - Positioned by coordinates
-- **Click/Hover** - Interactive marker selection
-- **Popup Details** - Info panel for selected disaster
-- **Pulse Animation** - Active markers pulse
-
-### Usage
-
-```tsx
-<RealWorldMap
-  disasters={filteredDisasters}
-  selectedDisaster={selectedDisaster}
-  onDisasterSelect={setSelectedDisaster}
-  onDisasterHover={setHoveredDisaster}
-/>
-```
-
----
-
-## Sidebar
-
-Disaster list and filter controls sidebar.
-
-### Props
-
-```typescript
+```ts
 interface SidebarProps {
-  disasters: Disaster[];
-  selectedDisaster: Disaster | null;
-  onDisasterSelect: (disaster: Disaster | null) => void;
-  activeFilters: DisasterType[];
-  onFilterChange: (filters: DisasterType[]) => void;
-  onOpenWatchlist: () => void;
-  onOpenCompare: () => void;
-  onOpenTrends: () => void;
-  onToggle3DGlobe: () => void;
+  events: ThreatEvent[];
+  selectedEvent: ThreatEvent | null;
+  onSelectEvent: (event: ThreatEvent) => void;
+  searchResults?: ThreatEvent[];
 }
 ```
 
-### Features
+### `TimelineView`
 
-- **Disaster List** - Scrollable list of all disasters
-- **Filter Buttons** - Toggle disaster types
-- **Quick Actions** - Access to features
-- **Search** - Find specific disasters
+Time-bucketed view of events (24h / 7d / 30d / all) replacing the list when
+the timeline toggle is active.
 
-### Usage
-
-```tsx
-<Sidebar
-  disasters={disasters}
-  selectedDisaster={selectedDisaster}
-  onDisasterSelect={setSelectedDisaster}
-  activeFilters={activeFilters}
-  onFilterChange={setActiveFilters}
-  onOpenWatchlist={() => setShowWatchlist(true)}
-  onOpenCompare={() => setShowCompare(true)}
-  onOpenTrends={() => setShowTrends(true)}
-  onToggle3DGlobe={() => setShow3DGlobe(!show3DGlobe)}
-/>
+```ts
+interface TimelineViewProps {
+  events: ThreatEvent[];
+  selectedEvent: ThreatEvent | null;
+  onSelectEvent: (event: ThreatEvent) => void;
+}
 ```
 
----
+### `ThreatTrends`
 
-## Watchlist
+Recharts analytics dashboard: category/severity distributions, CVSS bands,
+24-hour signal timeline. Wrapped in a modal-style overlay.
 
-Favorites management panel for cities and regions.
-
-### Props
-
-```typescript
-interface WatchlistProps {
+```ts
+interface ThreatTrendsProps {
+  isOpen: boolean;
   onClose: () => void;
+  events: ThreatEvent[];
+  cves: CveRecord[];
+  breaches: BreachRecord[];
 }
 ```
 
-### Features
+### `StatsOverlay`
 
-- **Add Cities** - Search and add favorite cities
-- **Weather Display** - Current weather for saved cities
-- **Region Watchlist** - Monitor entire regions
-- **localStorage** - Persistent storage
+Floating summary: total signals, critical count, active C2 servers, KEV
+entries, breach count.
 
-### Usage
-
-```tsx
-<Watchlist onClose={() => setShowWatchlist(false)} />
-```
-
----
-
-## WeatherCompare
-
-Side-by-side weather comparison tool.
-
-### Props
-
-```typescript
-interface WeatherCompareProps {
-  onClose: () => void;
-}
-```
-
-### Features
-
-- **Multi-city** - Compare up to 4 cities
-- **Key Metrics** - Temperature, humidity, wind
-- **Visual Comparison** - Side-by-side cards
-- **Add/Remove** - Manage comparison cities
-
-### Usage
-
-```tsx
-<WeatherCompare onClose={() => setShowCompare(false)} />
-```
-
----
-
-## StatsOverlay
-
-Real-time statistics display overlay.
-
-### Props
-
-```typescript
+```ts
 interface StatsOverlayProps {
-  disasters: Disaster[];
-  lastUpdate: Date;
+  events: ThreatEvent[];
+  kev: KevEntry[];
+  iocs: IocIndicator[];
+  isVisible: boolean;
 }
 ```
 
-### Features
+## Interaction components
 
-- **Total Count** - Number of active disasters
-- **By Type** - Breakdown by category
-- **Last Update** - Timestamp of data refresh
+### `SearchBar`
 
-### Usage
+Global search across CVEs, vendors, IPs, domains, and breaches. Selecting a
+result navigates: CVE → NVD entry, breach → HIBP page, IOC → Intel page with
+the row highlighted.
 
-```tsx
-<StatsOverlay disasters={disasters} lastUpdate={lastUpdate} />
+```ts
+interface SearchBarProps {
+  events: ThreatEvent[];
+  cves: CveRecord[];
+  iocs: IocIndicator[];
+  breaches: BreachRecord[];
+  onSelectEvent: (event: ThreatEvent) => void;
+  onSelectIoc: (ioc: IocIndicator) => void;
+}
 ```
 
----
+### `ExportModal`
 
-## NotificationToast
+Export options: JSON, CSV, KEV catalog, IOC list, and a firewall-ready IP
+blocklist. All CSV paths go through `utils/csv.ts` (`buildCsv`) for
+formula-injection-safe output.
 
-Toast notification for new disasters.
+```ts
+interface ExportModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  events: ThreatEvent[];
+  cves: CveRecord[];
+  kev: KevEntry[];
+  iocs: IocIndicator[];
+  breaches: BreachRecord[];
+}
+```
 
-### Props
+### `SettingsModal`
 
-```typescript
+Notification toggles, sound on/off, auto-refresh switch, refresh interval
+(1 / 5 / 15 min), and minimum severity for notifications.
+
+```ts
+interface SettingsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  settings: UserSettings;
+  onUpdateSettings: (settings: Partial<UserSettings>) => void;
+}
+```
+
+### `NotificationToast`
+
+Transient toast stack for new high-severity signals (configurable threshold,
+capped at 50). Click to select the event; per-toast and dismiss-all actions.
+
+```ts
 interface NotificationToastProps {
-  notification: Notification | null;
-  onDismiss: () => void;
+  notifications: ThreatNotification[];
+  onSelect: (event: ThreatEvent) => void;
+  onDismiss: (id: string) => void;
+  onDismissAll: () => void;
 }
 ```
 
-### Features
+## Chrome components
 
-- **Severity Colors** - Color-coded by severity
-- **Auto-dismiss** - Optional timeout
-- **Click Action** - Navigate to disaster
-
-### Usage
-
-```tsx
-<NotificationToast 
-  notification={notification} 
-  onDismiss={() => setNotification(null)} 
-/>
-```
-
----
-
-## Creating New Components
-
-### Template
-
-```tsx
-import React from 'react';
-
-interface MyComponentProps {
-  // Define props
-}
-
-const MyComponent: React.FC<MyComponentProps> = ({ /* props */ }) => {
-  // Component logic
-  
-  return (
-    <div className="glass-panel p-4">
-      {/* JSX */}
-    </div>
-  );
-};
-
-export default MyComponent;
-```
-
-### Export from Index
-
-Add to `src/components/index.ts`:
-
-```typescript
-export { default as MyComponent } from './MyComponent';
-```
-
-### Styling Guidelines
-
-- Use Tailwind CSS classes
-- Follow cyberpunk aesthetic
-- Use `glass-panel` class for glassmorphism
-- Use neon colors: `neon-cyan`, `neon-purple`, `neon-red`
+| Component | Purpose |
+|-----------|---------|
+| `Footer` | Data-source links (NVD, CISA, abuse.ch, DShield, OpenPhish, HIBP), credits, license |
+| `LoadingScreen` | Full-screen boot animation while the first fetch runs (`LoadingScreenProps: { message?: string }`) |

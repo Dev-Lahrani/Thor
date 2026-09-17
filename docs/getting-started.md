@@ -1,125 +1,67 @@
 # 🚀 Getting Started
 
-This guide will help you get the Live Weather & Natural Disaster Tracking application up and running on your local machine.
+Thor runs entirely in your browser — no backend, no accounts, no API keys.
+This guide gets you from zero to a running dashboard in about a minute.
 
 ## Prerequisites
 
-Before you begin, ensure you have the following installed:
-
-- **Node.js** version 18.0 or higher
-- **npm** version 9.0 or higher (comes with Node.js)
-- A modern web browser (Chrome, Firefox, Safari, Edge)
-
-### Check Your Versions
+- **Node.js 18+** (CI uses Node 20)
+- **npm 9+**
+- A modern browser (Chrome, Firefox, Safari, Edge)
 
 ```bash
-node --version
-# Should output v18.0.0 or higher
-
-npm --version
-# Should output 9.0.0 or higher
+node -v   # ≥ 18
+npm -v    # ≥ 9
 ```
 
-## Installation
-
-### 1. Clone the Repository
+## Install
 
 ```bash
-git clone https://github.com/Dev-Lahrani/Live-weather-and-Natural-disaster-viewing-using-a-live-map.git
-cd Live-weather-and-Natural-disaster-viewing-using-a-live-map
-```
-
-### 2. Install Dependencies
-
-```bash
+git clone https://github.com/Dev-Lahrani/Thor.git
+cd Thor
 npm install
 ```
 
-This will install all required packages including:
-- React 19
-- TypeScript
-- Tailwind CSS v4
-- Three.js for 3D globe
-- Recharts for data visualization
-- And more...
-
-### 3. Start the Development Server
+## Run
 
 ```bash
 npm run dev
 ```
 
-The application will start and be available at:
-```
-http://localhost:5173
-```
+Open **http://localhost:5173**. On first load Thor fetches all six threat
+feeds in parallel, geolocates the IOC IPs, and drops you on the live map.
 
-> **Note:** If port 5173 is in use, Vite will automatically use the next available port (5174, 5175, etc.)
-
-## First Steps
-
-### 1. Explore the Dashboard
-
-When you first load the app, you'll see:
-- **Interactive World Map** (70% of screen) - Shows disaster markers
-- **Sidebar** (30% of screen) - Lists all active disasters
-- **Stats Overlay** - Shows real-time statistics
-
-### 2. Navigate the App
-
-Use the header navigation to explore:
-- **Dashboard** - Main disaster tracking view
-- **Weather** - Global weather monitoring
-- **Air Quality** - AQI data for major cities
-
-### 3. Interact with Disasters
-
-- **Click** on any disaster marker to see details
-- **Hover** over markers for quick info
-- Use **filter buttons** in sidebar to show/hide disaster types
-
-### 4. Try the Features
-
-- ⭐ **Watchlist** - Save your favorite cities
-- ⚖️ **Compare** - Compare weather between cities
-- 📈 **Trends** - View disaster analytics
-- 🌍 **3D Globe** - Explore disasters in 3D
-
-## Build for Production
-
-When you're ready to deploy:
+## Build for production
 
 ```bash
-# Create production build
-npm run build
-
-# Preview the build locally
-npm run preview
+npm run build   # typecheck (tsc -b) + bundle (vite)
+npm run preview # serve the production build locally
 ```
 
-The build output will be in the `dist/` folder.
+The build output in `dist/` is pure static files. Because the app is
+client-side only, you can deploy it anywhere static files are served:
 
-## Next Steps
+- **GitHub Pages** — publish `dist/` from a branch or Actions artifact
+- **Netlify / Vercel** — build command `npm run build`, output dir `dist`
+- **Any static file server** — `nginx`, `serve`, a bucket, etc.
 
-- Read the [Architecture](./architecture.md) guide to understand the codebase
-- Check the [API Reference](./api-reference.md) for data sources
-- See [Customization](./customization.md) for theming options
+> ⚠️ Use hash routing or a server that rewrites unknown paths to `index.html`
+> if you deploy to a host without SPA fallback support (React Router needs it
+> for deep links like `/vulnerabilities`).
 
-## Common Issues
+## Tests & lint
 
-### Port Already in Use
-
-If you see "Port 5173 is in use", either:
-1. Stop the other process using that port
-2. Or let Vite use the next available port
-
-### Dependencies Not Installing
-
-Try clearing the npm cache:
 ```bash
-npm cache clean --force
-rm -rf node_modules
-npm install
+npm test           # Vitest, one-shot
+npm run test:watch # Vitest in watch mode
+npm run lint       # ESLint
 ```
 
-For more troubleshooting, see [Troubleshooting](./troubleshooting.md).
+CI runs `lint` + `test` + `build` on every push and PR.
+
+## Next steps
+
+- Read the [Architecture](./architecture.md) doc to understand data flow
+- See the [API Reference](./api-reference.md) for the feed layer
+- Check [Customization](./customization.md) to restyle or re-point feeds
+- Read [CONTRIBUTING](../CONTRIBUTING.md) before your first PR

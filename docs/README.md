@@ -1,28 +1,21 @@
-# 📚 Documentation
+# 📚 Thor Documentation
 
-Welcome to the Live Weather & Natural Disaster Tracking documentation!
+Welcome to the Thor documentation — a live, key-free cyber threat intelligence
+dashboard.
 
 ## Table of Contents
 
-- [Getting Started](./getting-started.md)
-- [Architecture](./architecture.md)
-- [API Reference](./api-reference.md)
-- [Components](./components.md)
-- [Customization](./customization.md)
-- [Troubleshooting](./troubleshooting.md)
+- [Getting Started](./getting-started.md) — prerequisites, install, run, build
+- [Architecture](./architecture.md) — how the app is structured and how data flows
+- [API Reference](./api-reference.md) — feed layer, caching, relay behavior
+- [Components](./components.md) — every React component and what it does
+- [Customization](./customization.md) — theming, colors, feeds, settings
+- [Troubleshooting](./troubleshooting.md) — common issues and fixes
 
 ## Quick Links
 
-| Document | Description |
-|----------|-------------|
-| [Getting Started](./getting-started.md) | Installation and first steps |
-| [Architecture](./architecture.md) | System design and data flow |
-| [API Reference](./api-reference.md) | External APIs used |
-| [Components](./components.md) | React component documentation |
-| [Customization](./customization.md) | Theming and configuration |
-| [Troubleshooting](./troubleshooting.md) | Common issues and solutions |
-
-## Need Help?
-
-- Open an [issue](https://github.com/Dev-Lahrani/Live-weather-and-Natural-disaster-viewing-using-a-live-map/issues) on GitHub
-- Check the [troubleshooting guide](./troubleshooting.md)
+- [Main README](../README.md)
+- [Contributing](../CONTRIBUTING.md)
+- [Security Policy](../SECURITY.md)
+- [Roadmap](../ROADMAP.md)
+- [Changelog](../CHANGELOG.md)
