@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-09-17
+
+### Changed
+- **Full rebrand: GeoAlert → Thor** — the project is now a Cyber Threat Intelligence
+  Dashboard. All weather and natural-disaster features are removed.
+
+### Added
+- **CVE feed** — recent vulnerabilities from NVD 2.0 with CVSS v3.1/v2 scoring,
+  attack vectors, vendor extraction, and NVD reference links.
+- **CISA KEV catalog** — Known Exploited Vulnerabilities (180-day window) with
+  ransomware-campaign flags, required actions, and federal remediation due dates.
+- **Malicious IP intel** — Feodo Tracker botnet C2 servers and DShield top attack
+  sources, geolocated via ipwho.is (cached 7 days in localStorage).
+- **Phishing URL feed** — OpenPhish community feed.
+- **Data breaches** — HaveIBeenPwned catalog with pwn counts, data classes,
+  verified/sensitive badges, and HIBP links.
+- **ISC threat level strip** — live infocon status on the Threat Intel page.
+- **Threat world map** — KEV/CVE hash-scatter ("global threat pressure") plus
+  geolocated C2/attacker markers with CVSS-based severity pulses.
+- **IP blocklist export** — one-click IOC text export for firewall/blocklist use.
+
+### Removed
+- Weather page, air-quality page, watchlist, weather comparison, animated weather
+  icons, disaster feeds (USGS/EONET), and disaster-specific map/chart features.
+
+---
+
 ## [1.0.0] - 2024-12-17
 
 ### Added
@@ -56,17 +83,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Three.js for 3D visualization
 - Recharts for data charts
 - React Router for navigation
-
----
-
-## Future Plans
-
-### Planned Features
-- [ ] User accounts and cloud sync
-- [ ] Push notifications
-- [ ] Historical data analysis
-- [ ] More data sources (NOAA, etc.)
-- [ ] Mobile app (React Native)
-- [ ] Dark/Light theme toggle
-- [ ] Localization (i18n)
-- [ ] Offline support (PWA)

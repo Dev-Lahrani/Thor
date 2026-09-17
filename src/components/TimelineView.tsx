@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Clock, ChevronDown } from 'lucide-react';
-import type { DisasterEvent } from '../types';
-import { formatRelativeTime, CATEGORY_INFO } from '../utils/helpers';
+import type { ThreatEvent } from '../types';
+import { formatRelativeTime, CATEGORY_INFO, SEVERITY_COLORS } from '../utils/helpers';
 
 interface TimelineViewProps {
-  disasters: DisasterEvent[];
-  onSelectEvent: (event: DisasterEvent) => void;
-  selectedEvent: DisasterEvent | null;
+  events: ThreatEvent[];
+  onSelectEvent: (event: ThreatEvent) => void;
+  selectedEvent: ThreatEvent | null;
 }
 
 type TimeFilter = '1h' | '6h' | '24h' | '7d' | 'all';
@@ -28,45 +28,41 @@ const timeFilterMs: Record<TimeFilter, number> = {
 };
 
 export const TimelineView: React.FC<TimelineViewProps> = ({
-  disasters,
+  events,
   onSelectEvent,
   selectedEvent,
 }) => {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('24h');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  // Filter disasters by time
-  const now = Date.now();
-  const filteredDisasters = disasters
-    .filter(d => {
-      const eventTime = new Date(d.date).getTime();
-      return now - eventTime <= timeFilterMs[timeFilter];
-    })
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const filteredEvents = useMemo(() => {
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
+    return events
+      .filter(e => now - new Date(e.date).getTime() <= timeFilterMs[timeFilter])
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [events, timeFilter]);
 
   // Group by hour/day for visual timeline
-  const groupedEvents = filteredDisasters.reduce((acc, event) => {
+  const groupedEvents = filteredEvents.reduce((acc, event) => {
     const date = new Date(event.date);
     let key: string;
-    
+
     if (timeFilter === '1h' || timeFilter === '6h') {
-      // Group by 15-minute intervals
       const minutes = Math.floor(date.getMinutes() / 15) * 15;
       key = `${date.getHours()}:${minutes.toString().padStart(2, '0')}`;
     } else if (timeFilter === '24h') {
-      // Group by hour
       key = `${date.getHours()}:00`;
     } else {
-      // Group by day
       key = date.toLocaleDateString();
     }
-    
+
     if (!acc[key]) {
       acc[key] = [];
     }
     acc[key].push(event);
     return acc;
-  }, {} as Record<string, DisasterEvent[]>);
+  }, {} as Record<string, ThreatEvent[]>);
 
   return (
     <div className="h-full flex flex-col">
@@ -76,7 +72,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
           <Clock className="w-4 h-4" />
           <span>Timeline</span>
         </div>
-        
+
         {/* Dropdown */}
         <div className="relative">
           <button
@@ -86,7 +82,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
             {timeFilterLabels[timeFilter]}
             <ChevronDown className={`w-4 h-4 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
           </button>
-          
+
           {isDropdownOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)} />
@@ -113,69 +109,63 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
       {/* Stats */}
       <div className="px-3 py-2 border-b border-white/10 text-xs text-gray-500 font-mono">
-        {filteredDisasters.length} events in {timeFilterLabels[timeFilter].toLowerCase()}
+        {filteredEvents.length} signals in {timeFilterLabels[timeFilter].toLowerCase()}
       </div>
 
       {/* Timeline */}
       <div className="flex-1 overflow-y-auto p-3">
         {Object.keys(groupedEvents).length === 0 ? (
           <div className="text-center py-8 text-gray-500 text-sm">
-            No events in this time period
+            No signals in this time period
           </div>
         ) : (
           <div className="relative">
             {/* Timeline line */}
             <div className="absolute left-3 top-0 bottom-0 w-px bg-gradient-to-b from-neon-cyan/50 via-neon-purple/30 to-transparent" />
-            
-            {Object.entries(groupedEvents).map(([timeKey, events]) => (
+
+            {Object.entries(groupedEvents).map(([timeKey, eventsInGroup]) => (
               <div key={timeKey} className="relative mb-4">
                 {/* Time marker */}
                 <div className="flex items-center gap-3 mb-2">
                   <div className="w-2 h-2 rounded-full bg-neon-cyan relative z-10" />
                   <span className="text-xs text-gray-500 font-mono">{timeKey}</span>
                 </div>
-                
+
                 {/* Events */}
                 <div className="ml-6 space-y-2">
-                  {events.map((event) => {
+                  {eventsInGroup.map((event) => {
                     const info = CATEGORY_INFO[event.category];
                     const isSelected = selectedEvent?.id === event.id;
-                    
+                    const severityStyle = SEVERITY_COLORS[event.severity || 'low'];
+
                     return (
                       <div
                         key={event.id}
                         onClick={() => onSelectEvent(event)}
                         className={`p-2 rounded-lg cursor-pointer transition-all ${
-                          isSelected 
-                            ? 'bg-white/10 border border-white/20' 
+                          isSelected
+                            ? 'bg-white/10 border border-white/20'
                             : 'bg-white/5 hover:bg-white/10 border border-transparent'
                         }`}
                       >
                         <div className="flex items-center gap-2">
-                          {event.magnitude && (
-                            <span 
+                          {event.magnitudeLabel && (
+                            <span
                               className="text-xs font-bold font-mono px-1.5 py-0.5 rounded"
                               style={{ backgroundColor: info.bgColor, color: info.color }}
                             >
-                              M{event.magnitude.toFixed(1)}
+                              {event.magnitudeLabel.length > 10 ? event.magnitudeLabel.slice(0, 10) : event.magnitudeLabel}
                             </span>
                           )}
-                          <span 
+                          <span
                             className="text-[10px] px-1.5 py-0.5 rounded uppercase"
                             style={{ backgroundColor: info.bgColor, color: info.color }}
                           >
                             {info.label}
                           </span>
-                          {event.severity && event.severity !== 'minor' && (
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase ${
-                              event.severity === 'catastrophic' ? 'bg-purple-500/20 text-purple-400' :
-                              event.severity === 'extreme' ? 'bg-red-500/20 text-red-400' :
-                              event.severity === 'severe' ? 'bg-orange-500/20 text-orange-400' :
-                              'bg-yellow-500/20 text-yellow-400'
-                            }`}>
-                              {event.severity}
-                            </span>
-                          )}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase ${severityStyle.bg} ${severityStyle.text}`}>
+                            {event.severity}
+                          </span>
                         </div>
                         <p className="text-sm text-white mt-1 truncate">
                           {event.title}

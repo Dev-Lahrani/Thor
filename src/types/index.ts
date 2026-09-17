@@ -1,203 +1,211 @@
-// Disaster event types
-export type DisasterCategory = 
-  | 'earthquakes'
-  | 'floods'
-  | 'wildfires'
-  | 'severeStorms'
-  | 'volcanoes'
-  | 'weather';
+// ============================================================
+// Thor — Cyber Threat Intelligence types
+// ============================================================
 
-export type SeverityLevel = 'minor' | 'moderate' | 'severe' | 'extreme' | 'catastrophic';
+// Threat categories used across map, filters, and styling
+export type ThreatCategory =
+  | 'kev'
+  | 'maliciousIp'
+  | 'phishing'
+  | 'breach';
+
+// Severity scale mirrors CVSS bands
+export type SeverityLevel =
+  | 'low'      // CVSS 0.1–3.9
+  | 'medium'   // CVSS 4.0–6.9
+  | 'high'     // CVSS 7.0–8.9
+  | 'critical'; // CVSS 9.0–10
 
 export type AlertLevel = 'green' | 'yellow' | 'orange' | 'red';
 
-export interface DisasterEvent {
-  id: string;
+export type ThreatSource =
+  | 'NVD'
+  | 'CISA-KEV'
+  | 'Feodo'
+  | 'DShield'
+  | 'OpenPhish'
+  | 'HIBP'
+  | 'ISC';
+
+// ------------------------------------------------------------
+// CVE vulnerability (NVD)
+// ------------------------------------------------------------
+export interface CveRecord {
+  id: string;               // CVE-YYYY-NNNNN
   title: string;
   description: string;
-  category: DisasterCategory;
-  coordinates: [number, number]; // [longitude, latitude]
-  date: string;
-  sources: Array<{
-    id: string;
-    url: string;
-  }>;
-  closed?: string;
-  
-  // Earthquake specific
-  magnitude?: number;
-  depth?: number; // km
-  
-  // Enhanced data
-  severity?: SeverityLevel;
-  alertLevel?: AlertLevel;
-  estimatedAffected?: number; // Estimated people affected
-  impactRadius?: number; // km
-  location?: {
-    country?: string;
-    region?: string;
-    nearestCity?: string;
-    distanceFromCity?: number; // km
-  };
-  
-  // Additional metrics
-  tsunami?: boolean;
-  felt?: number; // Number of felt reports (USGS)
-  mmi?: number; // Modified Mercalli Intensity
-  cdi?: number; // Community Decimal Intensity
-  sig?: number; // Significance (0-1000)
-  status?: string;
-  eventType?: string; // earthquake, quarry blast, etc.
+  published: string;        // ISO date
+  lastModified: string;
+  cvssScore: number;        // 0–10, base score (v3.1 preferred)
+  cvssVector: string;
+  severity: SeverityLevel;
+  attackVector?: string;    // NETWORK / ADJACENT / LOCAL / PHYSICAL
+  exploitAvailable?: boolean;
+  cisaExploitPoc?: boolean;
+  references: string[];     // URLs
+  vendors: string[];        // affected vendors/products
+  cwe?: string;
+  sourceIdentifier?: string;
 }
 
-// NASA EONET API Response types
-export interface EONETCategory {
+// ------------------------------------------------------------
+// CISA Known Exploited Vulnerability
+// ------------------------------------------------------------
+export interface KevEntry {
+  cveID: string;
+  vendorProject: string;
+  product: string;
+  vulnerabilityName: string;
+  dateAdded: string;
+  shortDescription: string;
+  requiredAction: string;
+  dueDate: string;
+  knownRansomwareCampaignUse: 'Known' | 'Unknown';
+  notes?: string;
+  cwes?: string[];
+}
+
+// ------------------------------------------------------------
+// Indicator of compromise
+// ------------------------------------------------------------
+export type IocType = 'c2-ip' | 'phishing-url' | 'attacker-ip';
+
+export interface IocIndicator {
   id: string;
-  title: string;
+  type: IocType;
+  value: string;            // IP or URL
+  threat: string;           // malware family / campaign label
+  source: ThreatSource;
+  country?: string;         // ISO code
+  countryName?: string;
+  city?: string;
+  coordinates?: [number, number]; // [lon, lat] once geolocated
+  firstSeen?: string;
+  lastSeen?: string;
+  confidence: 'low' | 'medium' | 'high';
+  eventCount?: number;         // attack count (DShield)
 }
 
-export interface EONETSource {
+// ------------------------------------------------------------
+// Map event — union of geo-tagged threats
+// ------------------------------------------------------------
+export interface ThreatEvent {
   id: string;
-  url: string;
-}
-
-export interface EONETGeometry {
-  magnitudeValue: number | null;
-  magnitudeUnit: string | null;
-  date: string;
-  type: string;
-  coordinates: [number, number];
-}
-
-export interface EONETEvent {
-  id: string;
-  title: string;
-  description: string | null;
-  link: string;
-  closed: string | null;
-  categories: EONETCategory[];
-  sources: EONETSource[];
-  geometry: EONETGeometry[];
-}
-
-export interface EONETResponse {
+  category: ThreatCategory;
   title: string;
   description: string;
-  link: string;
-  events: EONETEvent[];
+  coordinates: [number, number]; // [lon, lat]
+  date: string;                  // ISO
+  severity: SeverityLevel;
+  alertLevel: AlertLevel;
+  source: ThreatSource;
+  sourceUrl?: string;
+  // Optional enrichments
+  country?: string;
+  countryName?: string;
+  city?: string;
+  cvssScore?: number;
+  magnitudeLabel?: string;       // e.g. "CVSS 9.8" or malware family
+  asn?: string;
+  eventCount?: number;           // e.g. attack count for DShield
 }
 
-// Weather types
-export interface WeatherData {
-  city: string;
-  country: string;
-  coordinates: [number, number];
-  temperature: number;
-  weatherCode: number;
-  windSpeed: number;
-  humidity: number;
-  description: string;
-  isDay: boolean;
-  
-  // Enhanced weather data
-  feelsLike?: number;
-  tempMin?: number;
-  tempMax?: number;
-  pressure?: number; // hPa
-  visibility?: number; // km
-  uvIndex?: number;
-  cloudCover?: number; // percentage
-  precipitation?: number; // mm
-  precipitationProbability?: number; // percentage
-  windDirection?: number; // degrees
-  windGusts?: number; // km/h
-  dewPoint?: number;
-  
-  // Air quality
-  airQualityIndex?: number;
-  airQualityLevel?: 'good' | 'moderate' | 'unhealthy-sensitive' | 'unhealthy' | 'very-unhealthy' | 'hazardous';
-  pm25?: number;
-  pm10?: number;
-  
-  // Sun/Moon
-  sunrise?: string;
-  sunset?: string;
-  
-  // Alerts
-  weatherAlerts?: Array<{
-    event: string;
-    severity: string;
-    headline: string;
-    description: string;
-    start: string;
-    end: string;
-  }>;
-}
-
-export interface OpenMeteoResponse {
-  latitude: number;
-  longitude: number;
-  current: {
-    time: string;
-    temperature_2m: number;
-    apparent_temperature?: number;
-    weather_code: number;
-    wind_speed_10m: number;
-    wind_direction_10m?: number;
-    wind_gusts_10m?: number;
-    relative_humidity_2m: number;
-    surface_pressure?: number;
-    cloud_cover?: number;
-    precipitation?: number;
-    is_day: number;
-    uv_index?: number;
-  };
-  daily?: {
-    time: string[];
-    temperature_2m_max: number[];
-    temperature_2m_min: number[];
-    sunrise: string[];
-    sunset: string[];
-    uv_index_max: number[];
-    precipitation_sum: number[];
-    precipitation_probability_max: number[];
-  };
-}
-
-// City data for weather
-export interface City {
+// ------------------------------------------------------------
+// Breach (HIBP)
+// ------------------------------------------------------------
+export interface BreachRecord {
   name: string;
-  country: string;
-  lat: number;
-  lon: number;
+  title: string;
+  domain: string;
+  breachDate: string;
+  addedDate: string;
+  pwnCount: number;
+  description: string;
+  dataClasses: string[];
+  isVerified: boolean;
+  isSensitive: boolean;
 }
 
-// Filter state
+// ------------------------------------------------------------
+// Filters & UI state
+// ------------------------------------------------------------
 export interface FilterState {
-  earthquakes: boolean;
-  floods: boolean;
-  wildfires: boolean;
-  severeStorms: boolean;
-  volcanoes: boolean;
-  weather: boolean;
+  kev: boolean;
+  maliciousIp: boolean;
+  phishing: boolean;
+  breach: boolean;
 }
 
-// Category mapping for colors and icons
 export interface CategoryInfo {
-  id: DisasterCategory;
+  id: ThreatCategory;
   label: string;
   color: string;
   bgColor: string;
   borderColor: string;
 }
 
-// App state
-export interface AppState {
-  disasters: DisasterEvent[];
-  weather: WeatherData[];
-  loading: boolean;
-  error: string | null;
-  filters: FilterState;
-  selectedEvent: DisasterEvent | WeatherData | null;
-  lastUpdated: Date | null;
+// ------------------------------------------------------------
+// Raw API response shapes (NVD 2.0, KEV, Feodo)
+// ------------------------------------------------------------
+export interface NvdCveItem {
+  cve: {
+    id: string;
+    sourceIdentifier?: string;
+    published: string;
+    lastModified: string;
+    descriptions: Array<{ lang: string; value: string }>;
+    metrics?: {
+      cvssMetricV31?: Array<{
+        cvssData: { baseScore: number; baseSeverity: string; vectorString: string; attackVector?: string };
+        source?: string;
+      }>;
+      cvssMetricV30?: Array<{
+        cvssData: { baseScore: number; baseSeverity: string; vectorString: string; attackVector?: string };
+      }>;
+      cvssMetricV2?: Array<{
+        cvssData: { baseScore: number; vectorString: string };
+        baseSeverity?: string;
+      }>;
+    };
+    references?: Array<{ url: string }>;
+    weaknesses?: Array<{ description: Array<{ value: string }> }>;
+    configurations?: Array<{
+      nodes?: Array<{
+        cpeMatch?: Array<{ criteria: string }>;
+      }>;
+    }>;
+  };
+}
+
+export interface KevCatalog {
+  title: string;
+  catalogVersion: string;
+  dateReleased: string;
+  count: number;
+  vulnerabilities: Array<{
+    cveID: string;
+    vendorProject: string;
+    product: string;
+    vulnerabilityName: string;
+    dateAdded: string;
+    shortDescription: string;
+    requiredAction: string;
+    dueDate: string;
+    knownRansomwareCampaignUse?: string;
+    notes?: string;
+    cwes?: Array<{ cweID: string }>;
+  }>;
+}
+
+export interface FeodoEntry {
+  ip_address: string;
+  port: number;
+  status: string;
+  hostname?: string | null;
+  as_number?: number;
+  as_name?: string;
+  country: string;
+  first_seen?: string;
+  last_online?: string;
+  malware: string;
 }

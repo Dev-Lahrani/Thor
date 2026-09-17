@@ -2,17 +2,22 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import './index.css'
-import App from './App.tsx'
-import { WeatherPage, AirQualityPage } from './pages'
+import { ThreatProvider } from './context/ThreatContext'
+import { Layout, MapView, VulnerabilitiesPage, ThreatIntelPage, DataBreachPage } from './pages'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<App />} />
-        <Route path="/weather" element={<WeatherPage />} />
-        <Route path="/air-quality" element={<AirQualityPage />} />
-      </Routes>
+      <ThreatProvider>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<MapView />} />
+            <Route path="/vulnerabilities" element={<VulnerabilitiesPage />} />
+            <Route path="/threat-intel" element={<ThreatIntelPage />} />
+            <Route path="/breaches" element={<DataBreachPage />} />
+          </Route>
+        </Routes>
+      </ThreatProvider>
     </BrowserRouter>
   </StrictMode>,
 )

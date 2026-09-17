@@ -1,51 +1,28 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import type { DisasterEvent, WeatherData, DisasterCategory, SeverityLevel, AlertLevel } from '../types';
-import { CATEGORY_INFO } from '../utils/helpers';
-import { 
-  Mountain, 
-  Droplets, 
-  Flame, 
-  CloudLightning, 
-  TriangleAlert, 
-  CloudSun,
+import type { ThreatEvent, SeverityLevel, ThreatCategory } from '../types';
+import { CATEGORY_INFO, SEVERITY_MAP_COLORS, ALERT_PULSE_SPEEDS } from '../utils/helpers';
+import {
+  ShieldAlert,
+  Radio,
+  Fish,
+  Database,
   ZoomIn,
   ZoomOut,
   Maximize2,
-  type LucideProps
+  type LucideProps,
 } from 'lucide-react';
 
-interface WorldMapProps {
-  disasters: DisasterEvent[];
-  weather: WeatherData[];
-  onSelectEvent: (event: DisasterEvent | WeatherData) => void;
-  selectedEvent: DisasterEvent | WeatherData | null;
-  showWeather: boolean;
+interface ThreatMapProps {
+  events: ThreatEvent[];
+  onSelectEvent: (event: ThreatEvent) => void;
+  selectedEvent: ThreatEvent | null;
 }
 
-const categoryIcons: Record<DisasterCategory, React.FC<LucideProps>> = {
-  earthquakes: Mountain,
-  floods: Droplets,
-  wildfires: Flame,
-  severeStorms: CloudLightning,
-  volcanoes: TriangleAlert,
-  weather: CloudSun,
-};
-
-// Severity-based colors for map markers
-const severityMapColors: Record<SeverityLevel, { fill: string; stroke: string; pulse: boolean }> = {
-  minor: { fill: '#22c55e20', stroke: '#22c55e', pulse: false },
-  moderate: { fill: '#eab30820', stroke: '#eab308', pulse: false },
-  severe: { fill: '#f9731620', stroke: '#f97316', pulse: true },
-  extreme: { fill: '#ef444420', stroke: '#ef4444', pulse: true },
-  catastrophic: { fill: '#a855f720', stroke: '#a855f7', pulse: true },
-};
-
-// Alert level pulse speeds
-const alertPulseSpeeds: Record<AlertLevel, string> = {
-  green: 'none',
-  yellow: '2s',
-  orange: '1.5s',
-  red: '0.8s',
+const categoryIcons: Record<ThreatCategory, React.FC<LucideProps>> = {
+  kev: ShieldAlert,
+  maliciousIp: Radio,
+  phishing: Fish,
+  breach: Database,
 };
 
 // Natural Earth TopoJSON URL (110m resolution for performance)
@@ -65,25 +42,25 @@ interface TopoJSON {
 function arcToCoordinates(arcIdx: number, arcs: number[][][], transform?: { scale: [number, number]; translate: [number, number] }): [number, number][] {
   const coords: [number, number][] = [];
   let x = 0, y = 0;
-  
+
   const arcIndex = arcIdx < 0 ? ~arcIdx : arcIdx;
   const arcData = arcs[arcIndex];
-  
+
   if (!arcData) return coords;
-  
+
   for (let i = 0; i < arcData.length; i++) {
     x += arcData[i][0];
     y += arcData[i][1];
-    
+
     let px = x, py = y;
     if (transform) {
       px = x * transform.scale[0] + transform.translate[0];
       py = y * transform.scale[1] + transform.translate[1];
     }
-    
+
     coords.push([px, py]);
   }
-  
+
   return arcIdx < 0 ? coords.reverse() : coords;
 }
 
@@ -97,21 +74,19 @@ function geoToSvg(lon: number, lat: number, width: number, height: number): { x:
 // Convert coordinates to SVG path
 function coordsToPath(coords: [number, number][], width: number, height: number): string {
   if (coords.length === 0) return '';
-  
+
   const points = coords.map(([lon, lat]) => {
     const { x, y } = geoToSvg(lon, lat, width, height);
     return `${x},${y}`;
   });
-  
+
   return `M${points.join('L')}Z`;
 }
 
-export const RealWorldMap: React.FC<WorldMapProps> = ({
-  disasters,
-  weather,
+export const ThreatMap: React.FC<ThreatMapProps> = ({
+  events,
   onSelectEvent,
   selectedEvent,
-  showWeather,
 }) => {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -120,7 +95,7 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
   const [landPaths, setLandPaths] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const svgRef = useRef<SVGSVGElement>(null);
-  
+
   const WIDTH = 1000;
   const HEIGHT = 500;
 
@@ -130,10 +105,10 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
       try {
         const response = await fetch(LAND_GEOJSON_URL);
         const topoData: TopoJSON = await response.json();
-        
+
         const paths: string[] = [];
         const land = topoData.objects.land;
-        
+
         if (land && 'geometries' in land) {
           for (const geom of land.geometries as { type: string; arcs: number[][] | number[][][] }[]) {
             if (geom.type === 'Polygon') {
@@ -163,7 +138,7 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
             }
           }
         }
-        
+
         setLandPaths(paths);
         setLoading(false);
       } catch (error) {
@@ -171,7 +146,7 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
         setLoading(false);
       }
     };
-    
+
     loadMapData();
   }, []);
 
@@ -203,29 +178,22 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
     setZoom(prev => Math.max(0.5, Math.min(8, prev * delta)));
   }, []);
 
-  const isEventSelected = (event: DisasterEvent | WeatherData) => {
-    if (!selectedEvent) return false;
-    if ('city' in selectedEvent && 'city' in event) {
-      return selectedEvent.city === event.city;
-    }
-    if ('id' in selectedEvent && 'id' in event) {
-      return selectedEvent.id === event.id;
-    }
-    return false;
+  const isEventSelected = (event: ThreatEvent) => {
+    return selectedEvent?.id === event.id;
   };
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-[#0a0a12]">
       {/* Ocean background with gradient */}
-      <div 
+      <div
         className="absolute inset-0"
         style={{
           background: 'radial-gradient(ellipse at center, #0d1a2d 0%, #0a0a12 70%)',
         }}
       />
-      
+
       {/* Grid overlay */}
-      <div 
+      <div
         className="absolute inset-0 opacity-20"
         style={{
           backgroundImage: `
@@ -294,7 +262,7 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
             <stop offset="0%" stopColor="#1a2a3a" />
             <stop offset="100%" stopColor="#152535" />
           </linearGradient>
-          
+
           {/* Glow filter */}
           <filter id="markerGlow" x="-100%" y="-100%" width="300%" height="300%">
             <feGaussianBlur stdDeviation="3" result="coloredBlur" />
@@ -316,7 +284,6 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
         </defs>
 
         {/* Graticule (lat/lon lines) */}
-        {/* Longitude lines */}
         {Array.from({ length: 13 }, (_, i) => {
           const lon = -180 + i * 30;
           const { x } = geoToSvg(lon, 0, WIDTH, HEIGHT);
@@ -332,7 +299,6 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
             />
           );
         })}
-        {/* Latitude lines */}
         {Array.from({ length: 7 }, (_, i) => {
           const lat = -90 + i * 30;
           const { y } = geoToSvg(0, lat, WIDTH, HEIGHT);
@@ -378,101 +344,39 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
         <text x="620" y="280" fill="rgba(0, 168, 255, 0.25)" fontSize="14" fontFamily="Inter, sans-serif" fontStyle="italic">Indian Ocean</text>
         <text x="850" y="200" fill="rgba(0, 168, 255, 0.25)" fontSize="12" fontFamily="Inter, sans-serif" fontStyle="italic">Pacific</text>
 
-        {/* Weather markers */}
-        {showWeather && weather.map((w) => {
-          const pos = geoToSvg(w.coordinates[0], w.coordinates[1], WIDTH, HEIGHT);
-          const info = CATEGORY_INFO.weather;
-          const isSelected = isEventSelected(w);
-          
-          return (
-            <g
-              key={`weather-${w.city}`}
-              transform={`translate(${pos.x}, ${pos.y})`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelectEvent(w);
-              }}
-              className="cursor-pointer"
-              style={{ filter: isSelected ? 'url(#markerGlowStrong)' : 'url(#markerGlow)' }}
-            >
-              <circle
-                r="8"
-                fill="none"
-                stroke={info.color}
-                strokeWidth="1"
-                opacity="0.4"
-                className="marker-pulse-ring"
-              />
-              <circle
-                r="5"
-                fill={info.bgColor}
-                stroke={isSelected ? info.color : info.borderColor}
-                strokeWidth={isSelected ? 2 : 1}
-              />
-              <text
-                x="8"
-                y="3"
-                fill={info.color}
-                fontSize="7"
-                fontFamily="JetBrains Mono, monospace"
-                fontWeight="bold"
-              >
-                {w.temperature}°
-              </text>
-            </g>
-          );
-        })}
+        {/* Threat markers */}
+        {events.map((event) => {
+          const pos = geoToSvg(event.coordinates[0], event.coordinates[1], WIDTH, HEIGHT);
+          const IconComponent = categoryIcons[event.category];
+          const isSelected = isEventSelected(event);
 
-        {/* Disaster markers */}
-        {disasters.map((disaster) => {
-          const pos = geoToSvg(disaster.coordinates[0], disaster.coordinates[1], WIDTH, HEIGHT);
-          const IconComponent = categoryIcons[disaster.category];
-          const isSelected = isEventSelected(disaster);
-          
-          // Get severity styling
-          const severity = disaster.severity || 'minor';
-          const alertLevel = disaster.alertLevel || 'green';
-          const severityColors = severityMapColors[severity];
-          const pulseSpeed = alertPulseSpeeds[alertLevel];
+          const severity = event.severity || 'low';
+          const alertLevel = event.alertLevel || 'green';
+          const severityColors = SEVERITY_MAP_COLORS[severity];
+          const pulseSpeed = ALERT_PULSE_SPEEDS[alertLevel];
           const shouldPulse = severityColors.pulse || alertLevel === 'red' || alertLevel === 'orange';
-          
-          // Size based on magnitude for earthquakes, otherwise based on severity
-          let baseSize = 8;
-          if (disaster.magnitude) {
-            baseSize = Math.min(6 + disaster.magnitude * 1.5, 20);
-          } else if (severity === 'catastrophic') {
-            baseSize = 16;
-          } else if (severity === 'extreme') {
+
+          // Size based on severity
+          let baseSize = 7;
+          if (severity === 'critical') {
             baseSize = 14;
-          } else if (severity === 'severe') {
-            baseSize = 12;
-          } else if (severity === 'moderate') {
-            baseSize = 10;
+          } else if (severity === 'high') {
+            baseSize = 11;
+          } else if (severity === 'medium') {
+            baseSize = 9;
           }
-          
+
           return (
             <g
-              key={disaster.id}
+              key={event.id}
               transform={`translate(${pos.x}, ${pos.y})`}
               onClick={(e) => {
                 e.stopPropagation();
-                onSelectEvent(disaster);
+                onSelectEvent(event);
               }}
               className="cursor-pointer"
               style={{ filter: isSelected ? 'url(#markerGlowStrong)' : 'url(#markerGlow)' }}
             >
-              {/* Impact radius ring (for severe+ events) */}
-              {disaster.impactRadius && disaster.impactRadius > 20 && (
-                <circle
-                  r={Math.min(baseSize * 3, 40)}
-                  fill={severityColors.fill}
-                  stroke={severityColors.stroke}
-                  strokeWidth="0.5"
-                  opacity="0.2"
-                  strokeDasharray="4,2"
-                />
-              )}
-
               {/* Outer pulse ring */}
               <circle
                 r={baseSize + 8}
@@ -483,7 +387,7 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
                 className={shouldPulse ? "marker-pulse-ring" : ""}
                 style={shouldPulse ? { animationDuration: pulseSpeed } : {}}
               />
-              
+
               {/* Inner pulse ring */}
               <circle
                 r={baseSize + 4}
@@ -494,7 +398,7 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
                 className={shouldPulse ? "marker-pulse-ring" : ""}
                 style={shouldPulse ? { animationDelay: '0.4s', animationDuration: pulseSpeed } : {}}
               />
-              
+
               {/* Main marker */}
               <circle
                 r={baseSize}
@@ -503,35 +407,24 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
                 strokeWidth={isSelected ? 2.5 : 1.5}
                 className={shouldPulse ? "marker-pulse-dot" : ""}
               />
-              
+
               {/* Icon */}
-              <foreignObject 
-                x={-baseSize * 0.5} 
-                y={-baseSize * 0.5} 
-                width={baseSize} 
+              <foreignObject
+                x={-baseSize * 0.5}
+                y={-baseSize * 0.5}
+                width={baseSize}
                 height={baseSize}
               >
                 <div className="flex items-center justify-center w-full h-full">
-                  <IconComponent 
-                    className="w-full h-full" 
-                    style={{ color: severityColors.stroke, padding: '2px' }} 
+                  <IconComponent
+                    className="w-full h-full"
+                    style={{ color: severityColors.stroke, padding: '2px' }}
                   />
                 </div>
               </foreignObject>
 
-              {/* Magnitude/severity label */}
-              {disaster.magnitude ? (
-                <text
-                  x={baseSize + 3}
-                  y="-2"
-                  fill={severityColors.stroke}
-                  fontSize="8"
-                  fontFamily="JetBrains Mono, monospace"
-                  fontWeight="bold"
-                >
-                  M{disaster.magnitude.toFixed(1)}
-                </text>
-              ) : severity !== 'minor' && (
+              {/* Magnitude label (CVSS or malware family) */}
+              {event.magnitudeLabel && (
                 <text
                   x={baseSize + 3}
                   y="-2"
@@ -540,23 +433,7 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
                   fontFamily="JetBrains Mono, monospace"
                   fontWeight="bold"
                 >
-                  {severity.toUpperCase()}
-                </text>
-              )}
-              
-              {/* Estimated affected indicator */}
-              {disaster.estimatedAffected && disaster.estimatedAffected >= 100000 && (
-                <text
-                  x={baseSize + 3}
-                  y="8"
-                  fill="#a855f7"
-                  fontSize="6"
-                  fontFamily="JetBrains Mono, monospace"
-                >
-                  {disaster.estimatedAffected >= 1000000 
-                    ? `${(disaster.estimatedAffected / 1000000).toFixed(1)}M`
-                    : `${(disaster.estimatedAffected / 1000).toFixed(0)}K`
-                  } affected
+                  {event.magnitudeLabel.toUpperCase()}
                 </text>
               )}
             </g>
@@ -568,11 +445,11 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
       <div className="absolute bottom-4 left-4 glass rounded-lg p-3 z-10">
         <div className="text-xs text-gray-400 mb-2 font-mono uppercase tracking-wider">Severity</div>
         <div className="flex flex-col gap-1.5 mb-3">
-          {(['minor', 'moderate', 'severe', 'extreme', 'catastrophic'] as SeverityLevel[]).map((sev) => {
-            const colors = severityMapColors[sev];
+          {(['low', 'medium', 'high', 'critical'] as SeverityLevel[]).map((sev) => {
+            const colors = SEVERITY_MAP_COLORS[sev];
             return (
               <div key={sev} className="flex items-center gap-1.5">
-                <div 
+                <div
                   className="w-2.5 h-2.5 rounded-full"
                   style={{ backgroundColor: colors.stroke, boxShadow: `0 0 6px ${colors.stroke}` }}
                 />
@@ -585,7 +462,7 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
           {Object.values(CATEGORY_INFO).map((info) => (
             <div key={info.id} className="flex items-center gap-1.5">
-              <div 
+              <div
                 className="w-2.5 h-2.5 rounded-full"
                 style={{ backgroundColor: info.color, boxShadow: `0 0 6px ${info.color}` }}
               />
@@ -598,8 +475,8 @@ export const RealWorldMap: React.FC<WorldMapProps> = ({
       {/* Stats display */}
       <div className="absolute bottom-4 right-4 glass rounded-lg px-3 py-2 z-10">
         <div className="text-xs text-gray-500 font-mono">
-          <span className="text-neon-cyan">{disasters.length}</span> Active Events | 
-          <span className="text-neon-purple ml-1">{weather.length}</span> Weather Stations
+          <span className="text-neon-cyan">{events.length}</span> Threat Signals |{' '}
+          <span className="text-neon-purple ml-1">Live</span>
         </div>
       </div>
     </div>

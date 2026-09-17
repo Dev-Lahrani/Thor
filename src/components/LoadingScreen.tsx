@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity } from 'lucide-react';
+import { Hammer } from 'lucide-react';
 
 interface LoadingScreenProps {
   message?: string;
@@ -36,7 +36,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
           
           {/* Logo box */}
           <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-neon-cyan/20 via-transparent to-neon-purple/20 border border-white/10 flex items-center justify-center shadow-2xl">
-            <Activity className="w-10 h-10 text-neon-cyan" />
+            <Hammer className="w-10 h-10 text-neon-cyan" />
             <div className="absolute inset-0 rounded-2xl bg-neon-cyan/10 blur-xl" />
           </div>
         </div>
@@ -45,11 +45,11 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
         <div className="text-center mb-8">
           <h2 className="text-2xl font-bold tracking-tight mb-1">
             <span className="bg-gradient-to-r from-neon-cyan via-white to-neon-purple bg-clip-text text-transparent">
-              GeoAlert
+              THOR
             </span>
           </h2>
           <p className="text-[11px] text-gray-500 font-medium tracking-[0.2em] uppercase">
-            Global Disaster Intelligence
+            Cyber Threat Intelligence
           </p>
         </div>
 

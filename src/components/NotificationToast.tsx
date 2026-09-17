@@ -1,30 +1,23 @@
 import React, { useState } from 'react';
-import { X, AlertTriangle, Bell, Volume2, VolumeX } from 'lucide-react';
-import type { DisasterEvent, SeverityLevel } from '../types';
+import { X, AlertTriangle, Bell, Volume2, VolumeX, ShieldAlert } from 'lucide-react';
+import type { ThreatEvent } from '../types';
+import { SEVERITY_COLORS } from '../utils/helpers';
 
-interface Notification {
+interface ThreatNotification {
   id: string;
-  event: DisasterEvent;
+  event: ThreatEvent;
   timestamp: Date;
   read: boolean;
 }
 
 interface NotificationToastProps {
-  notifications: Notification[];
+  notifications: ThreatNotification[];
   onDismiss: (id: string) => void;
   onDismissAll: () => void;
-  onSelectEvent: (event: DisasterEvent) => void;
+  onSelectEvent: (event: ThreatEvent) => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
 }
-
-const severityColors: Record<SeverityLevel, { bg: string; border: string; text: string }> = {
-  minor: { bg: 'bg-green-500/10', border: 'border-green-500/30', text: 'text-green-400' },
-  moderate: { bg: 'bg-yellow-500/10', border: 'border-yellow-500/30', text: 'text-yellow-400' },
-  severe: { bg: 'bg-orange-500/10', border: 'border-orange-500/30', text: 'text-orange-400' },
-  extreme: { bg: 'bg-red-500/10', border: 'border-red-500/30', text: 'text-red-400' },
-  catastrophic: { bg: 'bg-purple-500/10', border: 'border-purple-500/30', text: 'text-purple-400' },
-};
 
 export const NotificationToast: React.FC<NotificationToastProps> = ({
   notifications,
@@ -86,12 +79,12 @@ export const NotificationToast: React.FC<NotificationToastProps> = ({
               </button>
             )}
           </div>
-          
+
           <div className="max-h-80 overflow-y-auto">
             {recentNotifications.map((notification) => {
-              const severity = notification.event.severity || 'minor';
-              const colors = severityColors[severity];
-              
+              const severity = notification.event.severity || 'low';
+              const colors = SEVERITY_COLORS[severity];
+
               return (
                 <div
                   key={notification.id}
@@ -143,13 +136,13 @@ export const NotificationToast: React.FC<NotificationToastProps> = ({
         </div>
       )}
 
-      {/* Auto-show latest severe notification */}
+      {/* Auto-show latest critical notification */}
       {!isExpanded && unreadCount > 0 && (
         <div className="space-y-2">
           {recentNotifications.slice(0, 2).filter(n => !n.read).map((notification) => {
-            const severity = notification.event.severity || 'minor';
-            const colors = severityColors[severity];
-            
+            const severity = notification.event.severity || 'low';
+            const colors = SEVERITY_COLORS[severity];
+
             return (
               <div
                 key={notification.id}
@@ -158,11 +151,11 @@ export const NotificationToast: React.FC<NotificationToastProps> = ({
               >
                 <div className="flex items-start gap-3">
                   <div className={`p-2 rounded-lg ${colors.bg}`}>
-                    <AlertTriangle className={`w-4 h-4 ${colors.text}`} />
+                    <ShieldAlert className={`w-4 h-4 ${colors.text}`} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <span className={`text-xs px-1.5 py-0.5 rounded ${colors.bg} ${colors.text} uppercase font-semibold`}>
-                      New {severity} Event
+                      New {severity} Signal
                     </span>
                     <p className="text-sm text-white truncate mt-1">
                       {notification.event.title}
@@ -186,3 +179,5 @@ export const NotificationToast: React.FC<NotificationToastProps> = ({
     </div>
   );
 };
+
+export type { ThreatNotification };

@@ -1,472 +1,595 @@
-import type { 
-  DisasterEvent, 
-  DisasterCategory, 
-  EONETResponse, 
-  EONETEvent,
-  WeatherData,
-  OpenMeteoResponse,
-  City,
+// ============================================================
+// Thor — Threat intelligence feeds
+// All sources are free and require no API keys.
+// CORS status verified 2026-09:
+//   direct (CORS *)      : NVD, HIBP, OpenPhish, DShield/ISC, ipwho.is
+//   via r.jina.ai relay  : CISA KEV, Feodo Tracker
+// ============================================================
+
+import type {
+  CveRecord,
+  KevEntry,
+  IocIndicator,
+  ThreatEvent,
+  BreachRecord,
   SeverityLevel,
-  AlertLevel
+  NvdCveItem,
+  KevCatalog,
+  FeodoEntry,
+  ThreatSource,
+  ThreatCategory,
 } from '../types';
 
-// NASA EONET API - Real-time natural events
-const EONET_API_URL = 'https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=100';
+// ------------------------------------------------------------
+// Config
+// ------------------------------------------------------------
+const NVD_API = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
+const KEV_FEED = 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json';
+const FEODO_FEED = 'https://feodotracker.abuse.ch/downloads/ipblocklist.json';
+const OPENPHISH_FEED = 'https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt';
+const HIBP_API = 'https://haveibeenpwned.com/api/v3/breaches';
+const DSHIELD_SOURCES = 'https://isc.sans.edu/api/topips/records/200?json';
+const GEO_API = 'https://ipwho.is';
+const CORS_RELAY = 'https://r.jina.ai/';
 
-// USGS Earthquake APIs - Multiple feeds for comprehensive coverage
-// All earthquakes M1.0+ in the past hour (most real-time)
-const USGS_HOUR_URL = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/1.0_hour.geojson';
-// All earthquakes M2.5+ in the past day
-const USGS_DAY_URL = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson';
-// Significant earthquakes (past week)
-const USGS_SIGNIFICANT_URL = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson';
+const GEO_CACHE_KEY = 'thor_geo_cache_v1';
+const GEO_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 1 week
 
-// Category mapping from EONET to our types
-const categoryMap: Record<string, DisasterCategory> = {
-  'earthquakes': 'earthquakes',
-  'floods': 'floods',
-  'wildfires': 'wildfires',
-  'severeStorms': 'severeStorms',
-  'volcanoes': 'volcanoes',
-  'seaLakeIce': 'weather',
-  'snow': 'weather',
-  'dustHaze': 'weather',
-  'waterColor': 'weather',
-  'landslides': 'earthquakes',
-  'tempExtremes': 'weather',
-  'drought': 'weather',
-};
-
-function mapEONETCategory(eonetCategory: string): DisasterCategory {
-  return categoryMap[eonetCategory] || 'weather';
+// ------------------------------------------------------------
+// Simple TTL cache
+// ------------------------------------------------------------
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
 }
 
-function transformEONETEvent(event: EONETEvent): DisasterEvent | null {
-  // Get the most recent geometry (location)
-  const latestGeometry = event.geometry[event.geometry.length - 1];
-  if (!latestGeometry || !latestGeometry.coordinates) return null;
+const cache = new Map<string, CacheEntry<unknown>>();
 
-  const categoryId = event.categories[0]?.id || 'weather';
-  
-  return {
-    id: event.id,
-    title: event.title,
-    description: event.description || `Active ${event.categories[0]?.title || 'event'} detected`,
-    category: mapEONETCategory(categoryId),
-    coordinates: latestGeometry.coordinates as [number, number],
-    date: latestGeometry.date,
-    sources: event.sources.map(s => ({ id: s.id, url: s.url })),
-    closed: event.closed || undefined,
-  };
+function cached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.timestamp < ttlMs) {
+    return Promise.resolve(hit.data as T);
+  }
+  return fetcher().then(data => {
+    cache.set(key, { data, timestamp: Date.now() });
+    return data;
+  });
 }
 
-// USGS GeoJSON types
-interface USGSFeature {
-  type: string;
-  properties: {
-    mag: number;
-    place: string;
-    time: number;
-    updated: number;
-    url: string;
-    detail: string;
-    felt: number | null;
-    cdi: number | null;
-    mmi: number | null;
-    alert: string | null;
-    status: string;
-    tsunami: number;
-    sig: number;
-    net: string;
-    code: string;
-    ids: string;
-    sources: string;
-    types: string;
-    nst: number | null;
-    dmin: number | null;
-    rms: number;
-    gap: number | null;
-    magType: string;
-    type: string;
-    title: string;
-  };
-  geometry: {
-    type: string;
-    coordinates: [number, number, number]; // [lon, lat, depth]
-  };
-  id: string;
+/**
+ * Fetch through a CORS relay with graceful fallback to direct fetch.
+ * Used for feeds that don't send access-control-allow-origin.
+ */
+async function relayFetch<T>(url: string, validate: (raw: unknown) => T | null): Promise<T | null> {
+  // Try relay first (feed lacks CORS headers)
+  try {
+    const res = await fetch(CORS_RELAY + url);
+    if (res.ok) {
+      const text = await res.text();
+      // Relay prefixes content with "Title:/URL Source:/Published Time:" metadata lines.
+      // Feeds may be JSON objects ({) or arrays ([) — slice from whichever comes first.
+      const objStart = text.indexOf('{');
+      const arrStart = text.indexOf('[');
+      let jsonStart = -1;
+      if (objStart === -1) jsonStart = arrStart;
+      else if (arrStart === -1) jsonStart = objStart;
+      else jsonStart = Math.min(objStart, arrStart);
+      if (jsonStart >= 0) {
+        const cleaned = text.slice(jsonStart);
+        try {
+          const parsed = validate(JSON.parse(cleaned));
+          if (parsed) return parsed;
+        } catch {
+          /* fall through to direct */
+        }
+      }
+    }
+  } catch {
+    /* fall through to direct */
+  }
+
+  // Direct fetch (works if CORS policy changes or an extension adds headers)
+  try {
+    const res = await fetch(url);
+    if (res.ok) {
+      const parsed = validate(await res.json());
+      if (parsed) return parsed;
+    }
+  } catch {
+    /* both paths failed */
+  }
+  return null;
 }
 
-interface USGSResponse {
-  type: string;
-  metadata: {
-    generated: number;
-    url: string;
-    title: string;
-    status: number;
-    api: string;
-    count: number;
-  };
-  features: USGSFeature[];
+// ------------------------------------------------------------
+// Helpers
+// ------------------------------------------------------------
+
+export function cvssToSeverity(score: number): SeverityLevel {
+  if (score >= 9) return 'critical';
+  if (score >= 7) return 'high';
+  if (score >= 4) return 'medium';
+  return 'low';
 }
 
-function transformUSGSEarthquake(feature: USGSFeature): DisasterEvent {
-  const { properties, geometry, id } = feature;
-  const magnitude = properties.mag;
-  const depth = geometry.coordinates[2];
-  
-  // Determine severity based on magnitude
-  let severity: SeverityLevel = 'minor';
-  let alertLevel: AlertLevel = 'green';
-  let estimatedAffected = 0;
-  let impactRadius = 0;
-  
-  if (magnitude >= 8) {
-    severity = 'catastrophic';
-    alertLevel = 'red';
-    estimatedAffected = 10000000; // 10M+
-    impactRadius = 500;
-  } else if (magnitude >= 7) {
-    severity = 'extreme';
-    alertLevel = 'red';
-    estimatedAffected = 1000000; // 1M+
-    impactRadius = 250;
-  } else if (magnitude >= 6) {
-    severity = 'severe';
-    alertLevel = 'orange';
-    estimatedAffected = 100000;
-    impactRadius = 100;
-  } else if (magnitude >= 5) {
-    severity = 'moderate';
-    alertLevel = 'yellow';
-    estimatedAffected = 10000;
-    impactRadius = 50;
-  } else if (magnitude >= 4) {
-    severity = 'minor';
-    alertLevel = 'yellow';
-    estimatedAffected = 1000;
-    impactRadius = 20;
+function alertFromSeverity(sev: SeverityLevel): 'green' | 'yellow' | 'orange' | 'red' {
+  switch (sev) {
+    case 'critical': return 'red';
+    case 'high': return 'orange';
+    case 'medium': return 'yellow';
+    default: return 'green';
+  }
+}
+
+// ------------------------------------------------------------
+// NVD — recent CVEs (last N days, CVSS scored)
+// ------------------------------------------------------------
+
+export async function fetchRecentCves(days = 3, maxResults = 150): Promise<CveRecord[]> {
+  return cached(`nvd-${days}-${maxResults}`, 15 * 60 * 1000, async () => {
+    const end = new Date();
+    const start = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const fmt = (d: Date) => d.toISOString().replace(/\.\d+Z$/, '+00:00');
+    const url = `${NVD_API}?pubStartDate=${encodeURIComponent(fmt(start))}&pubEndDate=${encodeURIComponent(fmt(end))}&resultsPerPage=${maxResults}`;
+
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.vulnerabilities || [])
+        .map((item: NvdCveItem) => normalizeNvdCve(item))
+        .filter((c: CveRecord | null): c is CveRecord => c !== null);
+    } catch (err) {
+      console.error('[Thor] NVD fetch failed:', err);
+      return [];
+    }
+  });
+}
+
+function normalizeNvdCve(item: NvdCveItem): CveRecord | null {
+  const cve = item.cve;
+  const metrics = cve.metrics || {};
+
+  // Prefer CVSS v3.1, then v3.0, then v2
+  const v31 = metrics.cvssMetricV31?.[0];
+  const v30 = metrics.cvssMetricV30?.[0];
+  const v2 = metrics.cvssMetricV2?.[0];
+
+  let cvssScore = 0;
+  let cvssVector = '';
+  let severity: SeverityLevel = 'medium';
+  let attackVector: string | undefined;
+
+  if (v31) {
+    cvssScore = v31.cvssData.baseScore;
+    cvssVector = v31.cvssData.vectorString;
+    severity = cvssToSeverity(cvssScore);
+    attackVector = v31.cvssData.attackVector;
+  } else if (v30) {
+    cvssScore = v30.cvssData.baseScore;
+    cvssVector = v30.cvssData.vectorString;
+    severity = cvssToSeverity(cvssScore);
+    attackVector = v30.cvssData.attackVector;
+  } else if (v2) {
+    cvssScore = v2.cvssData.baseScore;
+    cvssVector = v2.cvssData.vectorString;
+    // NVD v2 baseSeverity uses lowercase words
+    const s = (v2.baseSeverity || '').toLowerCase();
+    severity = s === 'high' ? 'high' : s === 'medium' ? 'medium' : s === 'low' ? 'low' : cvssToSeverity(cvssScore);
   } else {
-    impactRadius = 10;
-    estimatedAffected = 100;
+    return null; // No CVSS data — skip
   }
 
-  // Use USGS alert if available
-  if (properties.alert) {
-    alertLevel = properties.alert as AlertLevel;
-  }
+  const description =
+    cve.descriptions?.find(d => d.lang === 'en')?.value || 'No description available.';
 
-  // Parse location from place string
-  const placeStr = properties.place || '';
-  const locationParts = placeStr.split(' of ');
-  let distanceFromCity: number | undefined;
-  let nearestCity: string | undefined;
-  
-  if (locationParts.length >= 2) {
-    const distMatch = locationParts[0].match(/(\d+)\s*km/);
-    if (distMatch) {
-      distanceFromCity = parseInt(distMatch[1]);
-    }
-    nearestCity = locationParts[locationParts.length - 1];
-  }
+  // Extract vendors from CPE criteria
+  const vendors = new Set<string>();
+  cve.configurations?.forEach(conf =>
+    conf.nodes?.forEach(node =>
+      node.cpeMatch?.forEach(cpe => {
+        const parts = cpe.criteria.split(':');
+        if (parts.length > 3) {
+          vendors.add(parts[3].replace(/_/g, ' '));
+        }
+      })
+    )
+  );
 
-  // Get severity description
-  const severityLabels: Record<SeverityLevel, string> = {
-    minor: 'Minor',
-    moderate: 'Moderate', 
-    severe: 'Severe',
-    extreme: 'Extreme',
-    catastrophic: 'Catastrophic'
-  };
-  
-  const description = [
-    `${severityLabels[severity]} earthquake with magnitude ${magnitude.toFixed(1)} at ${depth.toFixed(1)}km depth.`,
-    properties.tsunami ? '⚠️ TSUNAMI WARNING ISSUED.' : '',
-    properties.felt ? `Felt by ${properties.felt.toLocaleString()} people.` : '',
-    properties.mmi ? `Modified Mercalli Intensity: ${properties.mmi.toFixed(1)}` : '',
-    `Estimated impact radius: ${impactRadius}km.`,
-    estimatedAffected > 0 ? `Potentially affecting up to ${estimatedAffected.toLocaleString()} people.` : '',
-  ].filter(Boolean).join(' ');
-  
   return {
-    id: `usgs-${id}`,
-    title: `M${magnitude.toFixed(1)} Earthquake - ${properties.place}`,
+    id: cve.id,
+    title: `${cve.id} — ${vendors.size > 0 ? [...vendors].slice(0, 2).map(v => v.charAt(0).toUpperCase() + v.slice(1)).join(', ') : 'Vulnerability'}`,
     description,
-    category: 'earthquakes',
-    coordinates: [geometry.coordinates[0], geometry.coordinates[1]],
-    date: new Date(properties.time).toISOString(),
-    sources: [{ id: 'USGS', url: properties.url }],
-    magnitude,
-    depth,
+    published: cve.published,
+    lastModified: cve.lastModified,
+    cvssScore,
+    cvssVector,
     severity,
-    alertLevel,
-    estimatedAffected,
-    impactRadius,
-    location: {
-      nearestCity,
-      distanceFromCity,
-    },
-    tsunami: properties.tsunami === 1,
-    felt: properties.felt || undefined,
-    mmi: properties.mmi || undefined,
-    cdi: properties.cdi || undefined,
-    sig: properties.sig,
-    status: properties.status,
-    eventType: properties.type,
+    attackVector,
+    cisaExploitPoc: /CISA-EXPLOIT-POC|KEV/i.test(cve.sourceIdentifier || ''),
+    references: (cve.references || []).map(r => r.url).slice(0, 5),
+    vendors: [...vendors].slice(0, 6),
+    cwe: cve.weaknesses?.[0]?.description?.[0]?.value,
+    sourceIdentifier: cve.sourceIdentifier,
   };
 }
 
-async function fetchUSGSEarthquakes(): Promise<DisasterEvent[]> {
-  try {
-    // Fetch from all three feeds for most comprehensive real-time data
-    const [hourResponse, dayResponse, significantResponse] = await Promise.all([
-      fetch(USGS_HOUR_URL),  // Most recent - updated every minute
-      fetch(USGS_DAY_URL),   // Past 24 hours
-      fetch(USGS_SIGNIFICANT_URL), // Significant events
-    ]);
-    
-    const events: DisasterEvent[] = [];
-    const seenIds = new Set<string>();
-    
-    // Process hour feed first (most recent)
-    if (hourResponse.ok) {
-      const hourData: USGSResponse = await hourResponse.json();
-      console.log(`[USGS] ${hourData.features.length} earthquakes in past hour`);
-      for (const feature of hourData.features) {
-        if (!seenIds.has(feature.id)) {
-          seenIds.add(feature.id);
-          events.push(transformUSGSEarthquake(feature));
-        }
-      }
-    }
-    
-    // Process day feed
-    if (dayResponse.ok) {
-      const dayData: USGSResponse = await dayResponse.json();
-      for (const feature of dayData.features) {
-        if (!seenIds.has(feature.id)) {
-          seenIds.add(feature.id);
-          events.push(transformUSGSEarthquake(feature));
-        }
-      }
-    }
-    
-    // Process significant feed
-    if (significantResponse.ok) {
-      const significantData: USGSResponse = await significantResponse.json();
-      for (const feature of significantData.features) {
-        if (!seenIds.has(feature.id)) {
-          seenIds.add(feature.id);
-          events.push(transformUSGSEarthquake(feature));
-        }
-      }
-    }
-    
-    return events;
-  } catch (error) {
-    console.error('Failed to fetch USGS earthquakes:', error);
-    return [];
-  }
-}
+// ------------------------------------------------------------
+// CISA KEV — actively exploited vulnerabilities
+// ------------------------------------------------------------
 
-async function fetchEONETEvents(): Promise<DisasterEvent[]> {
-  try {
-    const response = await fetch(EONET_API_URL);
-    if (!response.ok) {
-      throw new Error(`EONET API error: ${response.status}`);
-    }
-    
-    const data: EONETResponse = await response.json();
-    
-    const events = data.events
-      .map(transformEONETEvent)
-      .filter((event): event is DisasterEvent => event !== null);
-    
-    return events;
-  } catch (error) {
-    console.error('Failed to fetch EONET events:', error);
-    return [];
-  }
-}
+const KEV_MAX_AGE_DAYS = 180;
 
-export async function fetchDisasterEvents(): Promise<DisasterEvent[]> {
-  try {
-    // Fetch from multiple sources in parallel
-    const [eonetEvents, usgsEarthquakes] = await Promise.all([
-      fetchEONETEvents(),
-      fetchUSGSEarthquakes(),
-    ]);
-    
-    // Combine and deduplicate events
-    const allEvents: DisasterEvent[] = [];
-    const seenCoords = new Set<string>();
-    
-    // Add USGS earthquakes first (more accurate real-time data)
-    for (const event of usgsEarthquakes) {
-      const coordKey = `${event.coordinates[0].toFixed(2)},${event.coordinates[1].toFixed(2)}`;
-      if (!seenCoords.has(coordKey)) {
-        seenCoords.add(coordKey);
-        allEvents.push(event);
+export async function fetchKevEntries(): Promise<KevEntry[]> {
+  return cached('kev', 30 * 60 * 1000, async () => {
+    const parse = (raw: unknown): KevCatalog | null => {
+      if (raw && typeof raw === 'object' && 'vulnerabilities' in raw) {
+        return raw as KevCatalog;
       }
-    }
-    
-    // Add EONET events (excluding earthquakes that might duplicate USGS)
-    for (const event of eonetEvents) {
-      const coordKey = `${event.coordinates[0].toFixed(2)},${event.coordinates[1].toFixed(2)}`;
-      // Skip if same location already exists (likely duplicate earthquake)
-      if (event.category === 'earthquakes' && seenCoords.has(coordKey)) {
-        continue;
-      }
-      if (!seenCoords.has(coordKey)) {
-        seenCoords.add(coordKey);
-      }
-      allEvents.push(event);
-    }
-    
-    // Sort by date (most recent first)
-    allEvents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    
-    return allEvents;
-  } catch (error) {
-    console.error('Failed to fetch disaster events:', error);
-    throw error;
-  }
-}
-
-// Major cities for weather data
-const MAJOR_CITIES: City[] = [
-  { name: 'New York', country: 'USA', lat: 40.7128, lon: -74.0060 },
-  { name: 'Los Angeles', country: 'USA', lat: 34.0522, lon: -118.2437 },
-  { name: 'London', country: 'UK', lat: 51.5074, lon: -0.1278 },
-  { name: 'Paris', country: 'France', lat: 48.8566, lon: 2.3522 },
-  { name: 'Tokyo', country: 'Japan', lat: 35.6762, lon: 139.6503 },
-  { name: 'Sydney', country: 'Australia', lat: -33.8688, lon: 151.2093 },
-  { name: 'Dubai', country: 'UAE', lat: 25.2048, lon: 55.2708 },
-  { name: 'Singapore', country: 'Singapore', lat: 1.3521, lon: 103.8198 },
-  { name: 'Mumbai', country: 'India', lat: 19.0760, lon: 72.8777 },
-  { name: 'São Paulo', country: 'Brazil', lat: -23.5505, lon: -46.6333 },
-  { name: 'Cairo', country: 'Egypt', lat: 30.0444, lon: 31.2357 },
-  { name: 'Moscow', country: 'Russia', lat: 55.7558, lon: 37.6173 },
-  { name: 'Beijing', country: 'China', lat: 39.9042, lon: 116.4074 },
-  { name: 'Berlin', country: 'Germany', lat: 52.5200, lon: 13.4050 },
-  { name: 'Cape Town', country: 'South Africa', lat: -33.9249, lon: 18.4241 },
-  { name: 'Mexico City', country: 'Mexico', lat: 19.4326, lon: -99.1332 },
-  { name: 'Toronto', country: 'Canada', lat: 43.6532, lon: -79.3832 },
-  { name: 'Seoul', country: 'South Korea', lat: 37.5665, lon: 126.9780 },
-  { name: 'Bangkok', country: 'Thailand', lat: 13.7563, lon: 100.5018 },
-  { name: 'Lagos', country: 'Nigeria', lat: 6.5244, lon: 3.3792 },
-];
-
-// Weather code descriptions
-const weatherCodeDescriptions: Record<number, string> = {
-  0: 'Clear sky',
-  1: 'Mainly clear',
-  2: 'Partly cloudy',
-  3: 'Overcast',
-  45: 'Foggy',
-  48: 'Depositing rime fog',
-  51: 'Light drizzle',
-  53: 'Moderate drizzle',
-  55: 'Dense drizzle',
-  56: 'Light freezing drizzle',
-  57: 'Dense freezing drizzle',
-  61: 'Slight rain',
-  63: 'Moderate rain',
-  65: 'Heavy rain',
-  66: 'Light freezing rain',
-  67: 'Heavy freezing rain',
-  71: 'Slight snow',
-  73: 'Moderate snow',
-  75: 'Heavy snow',
-  77: 'Snow grains',
-  80: 'Slight rain showers',
-  81: 'Moderate rain showers',
-  82: 'Violent rain showers',
-  85: 'Slight snow showers',
-  86: 'Heavy snow showers',
-  95: 'Thunderstorm',
-  96: 'Thunderstorm with slight hail',
-  99: 'Thunderstorm with heavy hail',
-};
-
-async function fetchCityWeather(city: City): Promise<WeatherData | null> {
-  try {
-    // Comprehensive weather data request
-    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m,is_day,precipitation,cloud_cover,pressure_msl,surface_pressure,dew_point_2m&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max&timezone=auto`;
-    
-    // Air quality data request
-    const airQualityUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${city.lat}&longitude=${city.lon}&current=us_aqi,pm10,pm2_5`;
-    
-    const [weatherResponse, airQualityResponse] = await Promise.all([
-      fetch(weatherUrl),
-      fetch(airQualityUrl).catch(() => null), // Air quality may fail
-    ]);
-    
-    if (!weatherResponse.ok) return null;
-    
-    const weatherData = await weatherResponse.json();
-    let airQualityData = null;
-    
-    if (airQualityResponse?.ok) {
-      airQualityData = await airQualityResponse.json();
-    }
-    
-    // Determine air quality level
-    let airQualityLevel: 'good' | 'moderate' | 'unhealthy-sensitive' | 'unhealthy' | 'very-unhealthy' | 'hazardous' = 'good';
-    const aqi = airQualityData?.current?.us_aqi || 0;
-    
-    if (aqi > 300) airQualityLevel = 'hazardous';
-    else if (aqi > 200) airQualityLevel = 'very-unhealthy';
-    else if (aqi > 150) airQualityLevel = 'unhealthy';
-    else if (aqi > 100) airQualityLevel = 'unhealthy-sensitive';
-    else if (aqi > 50) airQualityLevel = 'moderate';
-    
-    // Get today's daily data
-    const todayIndex = 0;
-    
-    return {
-      city: city.name,
-      country: city.country,
-      coordinates: [city.lon, city.lat],
-      temperature: Math.round(weatherData.current.temperature_2m),
-      feelsLike: Math.round(weatherData.current.apparent_temperature),
-      tempMin: Math.round(weatherData.daily?.temperature_2m_min?.[todayIndex] || weatherData.current.temperature_2m - 3),
-      tempMax: Math.round(weatherData.daily?.temperature_2m_max?.[todayIndex] || weatherData.current.temperature_2m + 3),
-      weatherCode: weatherData.current.weather_code,
-      windSpeed: Math.round(weatherData.current.wind_speed_10m),
-      windDirection: weatherData.current.wind_direction_10m,
-      windGusts: Math.round(weatherData.current.wind_gusts_10m || 0),
-      humidity: weatherData.current.relative_humidity_2m,
-      description: weatherCodeDescriptions[weatherData.current.weather_code] || 'Unknown',
-      isDay: weatherData.current.is_day === 1,
-      pressure: Math.round(weatherData.current.pressure_msl || weatherData.current.surface_pressure || 1013),
-      visibility: 10, // Open-Meteo doesn't provide visibility, using default
-      uvIndex: Math.round(weatherData.daily?.uv_index_max?.[todayIndex] || 0),
-      cloudCover: weatherData.current.cloud_cover,
-      precipitation: weatherData.current.precipitation || 0,
-      precipitationProbability: weatherData.daily?.precipitation_probability_max?.[todayIndex] || 0,
-      dewPoint: Math.round(weatherData.current.dew_point_2m || 0),
-      airQualityIndex: aqi,
-      airQualityLevel,
-      pm25: airQualityData?.current?.pm2_5 || undefined,
-      pm10: airQualityData?.current?.pm10 || undefined,
-      sunrise: weatherData.daily?.sunrise?.[todayIndex] || undefined,
-      sunset: weatherData.daily?.sunset?.[todayIndex] || undefined,
-      weatherAlerts: [], // Would need a separate alerts API
+      return null;
     };
-  } catch (error) {
-    console.error(`Failed to fetch weather for ${city.name}:`, error);
-    return null;
+
+    const catalog = await relayFetch<KevCatalog>(KEV_FEED, parse);
+    if (!catalog) return [];
+
+    const cutoff = Date.now() - KEV_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+    return catalog.vulnerabilities
+      .filter(v => new Date(v.dateAdded).getTime() >= cutoff)
+      .sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime())
+      .map(v => ({
+        cveID: v.cveID,
+        vendorProject: v.vendorProject,
+        product: v.product,
+        vulnerabilityName: v.vulnerabilityName,
+        dateAdded: v.dateAdded,
+        shortDescription: v.shortDescription,
+        requiredAction: v.requiredAction,
+        dueDate: v.dueDate,
+        knownRansomwareCampaignUse: (v.knownRansomwareCampaignUse === 'Known' ? 'Known' : 'Unknown') as 'Known' | 'Unknown',
+        notes: v.notes,
+        cwes: v.cwes?.map(c => c.cweID),
+      }));
+  });
+}
+
+// ------------------------------------------------------------
+// Feodo Tracker — C2 servers
+// ------------------------------------------------------------
+
+export async function fetchC2Ips(): Promise<IocIndicator[]> {
+  return cached('feodo', 30 * 60 * 1000, async () => {
+    const parse = (raw: unknown): FeodoEntry[] | null =>
+      Array.isArray(raw) ? (raw as FeodoEntry[]) : null;
+
+    const entries = await relayFetch<FeodoEntry[]>(FEODO_FEED, parse);
+    if (!entries) return [];
+
+    return entries
+      .filter(e => e.ip_address)
+      .map((e, i) => ({
+        id: `feodo-${e.ip_address}-${e.port}-${i}`,
+        type: 'c2-ip' as const,
+        value: e.ip_address,
+        threat: e.malware || 'Botnet C2',
+        source: 'Feodo' as ThreatSource,
+        country: e.country,
+        firstSeen: e.first_seen,
+        lastSeen: e.last_online,
+        confidence: 'high' as const,
+      }));
+  });
+}
+
+// ------------------------------------------------------------
+// DShield — top attacking sources
+// ------------------------------------------------------------
+
+interface DshieldSource {
+  rank?: number;
+  source: string;
+  reports: number;
+  targets?: number;
+  firstseen?: string;
+  lastseen?: string;
+}
+
+export async function fetchAttackerIps(): Promise<IocIndicator[]> {
+  return cached('dshield', 60 * 60 * 1000, async () => {
+    try {
+      const res = await fetch(DSHIELD_SOURCES);
+      if (!res.ok) return [];
+      const data: DshieldSource[] = await res.json();
+      return data
+        .filter(s => s.source)
+        .map(s => ({
+          id: `dshield-${s.source}`,
+          type: 'attacker-ip' as const,
+          value: s.source,
+          threat: 'Network attack source',
+          source: 'DShield' as ThreatSource,
+          firstSeen: s.firstseen,
+          lastSeen: s.lastseen,
+          confidence: 'high' as const,
+          eventCount: s.reports,
+        }));
+    } catch (err) {
+      console.error('[Thor] DShield fetch failed:', err);
+      return [];
+    }
+  });
+}
+
+// ------------------------------------------------------------
+// OpenPhish — phishing URLs
+// ------------------------------------------------------------
+
+export async function fetchPhishingUrls(limit = 40): Promise<IocIndicator[]> {
+  return cached(`openphish-${limit}`, 30 * 60 * 1000, async () => {
+    try {
+      const res = await fetch(OPENPHISH_FEED);
+      if (!res.ok) return [];
+      const text = await res.text();
+      return text
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => l.startsWith('http'))
+        .slice(0, limit)
+        .map((url, i) => ({
+          id: `openphish-${i}`,
+          type: 'phishing-url' as const,
+          value: url,
+          threat: 'Phishing URL',
+          source: 'OpenPhish' as ThreatSource,
+          confidence: 'high' as const,
+        }));
+    } catch (err) {
+      console.error('[Thor] OpenPhish fetch failed:', err);
+      return [];
+    }
+  });
+}
+
+// ------------------------------------------------------------
+// HaveIBeenPwned — public breach catalog
+// ------------------------------------------------------------
+
+export async function fetchBreaches(): Promise<BreachRecord[]> {
+  return cached('hibp', 6 * 60 * 60 * 1000, async () => {
+    try {
+      const res = await fetch(HIBP_API);
+      if (!res.ok) return [];
+      const data: Array<{
+        Name: string; Title: string; Domain: string; BreachDate: string;
+        AddedDate: string; PwnCount: number; Description: string;
+        DataClasses: string[]; IsVerified?: boolean; IsSensitive?: boolean;
+      }> = await res.json();
+
+      return data
+        .map(b => ({
+          name: b.Name,
+          title: b.Title,
+          domain: b.Domain,
+          breachDate: b.BreachDate,
+          addedDate: b.AddedDate,
+          pwnCount: b.PwnCount,
+          description: b.Description.replace(/<[^>]*>/g, ''),
+          dataClasses: b.DataClasses || [],
+          isVerified: b.IsVerified ?? false,
+          isSensitive: b.IsSensitive ?? false,
+        }))
+        .sort((a, b) => new Date(b.addedDate).getTime() - new Date(a.addedDate).getTime());
+    } catch (err) {
+      console.error('[Thor] HIBP fetch failed:', err);
+      return [];
+    }
+  });
+}
+
+// ------------------------------------------------------------
+// Geolocation (ipwho.is) — persisted in localStorage
+// ------------------------------------------------------------
+
+interface GeoEntry {
+  country?: string;
+  countryName?: string;
+  city?: string;
+  coordinates?: [number, number];
+  asn?: string;
+  fetchedAt: number;
+}
+
+function loadGeoCache(): Record<string, GeoEntry> {
+  try {
+    return JSON.parse(localStorage.getItem(GEO_CACHE_KEY) || '{}');
+  } catch {
+    return {};
   }
 }
 
-export async function fetchWeatherData(): Promise<WeatherData[]> {
+function saveGeoCache(c: Record<string, GeoEntry>) {
   try {
-    const weatherPromises = MAJOR_CITIES.map(city => fetchCityWeather(city));
-    const results = await Promise.all(weatherPromises);
-    return results.filter((w): w is WeatherData => w !== null);
-  } catch (error) {
-    console.error('Failed to fetch weather data:', error);
-    throw error;
+    localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(c));
+  } catch { /* storage full/unavailable */ }
+}
+
+export async function geolocateIps(ips: string[]): Promise<Record<string, GeoEntry>> {
+  const result: Record<string, GeoEntry> = {};
+  const cacheData = loadGeoCache();
+  const toFetch: string[] = [];
+
+  for (const ip of ips) {
+    const hit = cacheData[ip];
+    if (hit && Date.now() - hit.fetchedAt < GEO_CACHE_TTL) {
+      result[ip] = hit;
+    } else {
+      toFetch.push(ip);
+    }
   }
+
+  // ipwho.is free tier — small batches to stay rate-limit friendly
+  const BATCH = 10;
+  for (let i = 0; i < toFetch.length; i += BATCH) {
+    const batch = toFetch.slice(i, i + BATCH);
+    const settled = await Promise.allSettled(
+      batch.map(async ip => {
+        const res = await fetch(`${GEO_API}/${ip}`);
+        if (!res.ok) throw new Error(`geo failed for ${ip}`);
+        const data = await res.json();
+        if (data.success === false || !data.latitude || !data.longitude) {
+          throw new Error(`no geo data for ${ip}`);
+        }
+        return {
+          ip,
+          geo: {
+            country: data.country_code,
+            countryName: data.country,
+            city: data.city,
+            coordinates: [data.longitude, data.latitude] as [number, number],
+            asn: data.connection?.asn ? `AS${data.connection.asn}` : undefined,
+            fetchedAt: Date.now(),
+          } as GeoEntry,
+        };
+      })
+    );
+
+    for (const s of settled) {
+      if (s.status === 'fulfilled') {
+        result[s.value.ip] = s.value.geo;
+        cacheData[s.value.ip] = s.value.geo;
+      }
+    }
+  }
+
+  saveGeoCache(cacheData);
+  return result;
+}
+
+// ------------------------------------------------------------
+// Map event assembly — the unified ThreatEvent list
+// ------------------------------------------------------------
+
+function cvssToAlert(score: number): 'green' | 'yellow' | 'orange' | 'red' {
+  return alertFromSeverity(cvssToSeverity(score));
+}
+
+export interface ThreatFeedResult {
+  events: ThreatEvent[];
+  cves: CveRecord[];
+  kev: KevEntry[];
+  iocs: IocIndicator[];
+  breaches: BreachRecord[];
+}
+
+export async function fetchThreatFeeds(): Promise<ThreatFeedResult> {
+  const [cves, kev, c2Ips, attackerIps, phishing, breaches] = await Promise.all([
+    fetchRecentCves(3, 150),
+    fetchKevEntries(),
+    fetchC2Ips(),
+    fetchAttackerIps(),
+    fetchPhishingUrls(40),
+    fetchBreaches(),
+  ]);
+
+  const iocs = [...c2Ips, ...attackerIps, ...phishing];
+
+  // Geolocate all IP-based IOCs
+  const ipList = [...new Set(iocs.filter(i => i.type !== 'phishing-url').map(i => i.value))];
+  const geoMap = await geolocateIps(ipList).catch(() => ({} as Record<string, GeoEntry>));
+
+  const events: ThreatEvent[] = [];
+
+  // KEV → map events (rich: ransomware use, due date)
+  const now = Date.now();
+  for (const k of kev.slice(0, 120)) {
+    const ageDays = (now - new Date(k.dateAdded).getTime()) / 86400000;
+    const sev: SeverityLevel =
+      ageDays <= 30 ? 'critical' :
+      ageDays <= 90 ? 'high' :
+      'medium';
+    const threatCategory: ThreatCategory = 'kev';
+    events.push({
+      id: `kev-${k.cveID}`,
+      category: threatCategory,
+      title: `${k.cveID} — ${k.vendorProject} ${k.product}`,
+      description: k.shortDescription,
+      // KEV has no geo — spread across reference positions near vendor-neutral map slots
+      coordinates: [
+        ((k.cveID.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0) % 340) - 170),
+        ((k.cveID.split('').reduce((a, ch) => a + ch.charCodeAt(1) || 7, 0) % 120) - 60),
+      ],
+      date: k.dateAdded,
+      severity: sev,
+      alertLevel: alertFromSeverity(sev),
+      source: 'CISA-KEV',
+      sourceUrl: `https://nvd.nist.gov/vuln/detail/${k.cveID}`,
+      magnitudeLabel: k.knownRansomwareCampaignUse === 'Known' ? 'RANSOMWARE' : 'KEV',
+      eventCount: Math.round(ageDays),
+    });
+  }
+
+  // IP-based IOCs → map events
+  for (const ioc of iocs) {
+    if (ioc.type === 'phishing-url') continue;
+    const geo = geoMap[ioc.value];
+    if (!geo?.coordinates) continue;
+    const category: ThreatCategory = ioc.type === 'c2-ip' ? 'maliciousIp' : 'maliciousIp';
+    const isC2 = ioc.type === 'c2-ip';
+    const sev: SeverityLevel = isC2 ? 'critical' : 'high';
+    events.push({
+      id: ioc.id,
+      category,
+      title: isC2 ? `${ioc.value} — ${ioc.threat} C2` : `${ioc.value} — attack source`,
+      description: isC2
+        ? `Active command-and-control server for ${ioc.threat}.`
+        : `${ioc.source} top attacking host (${ioc.eventCount ?? '?'} attacks logged).`,
+      coordinates: geo.coordinates,
+      date: ioc.lastSeen || new Date().toISOString(),
+      severity: sev,
+      alertLevel: alertFromSeverity(sev),
+      source: ioc.source,
+      magnitudeLabel: isC2 ? ioc.threat : `${ioc.eventCount ?? 0} attacks`,
+      country: geo.country,
+      countryName: geo.countryName,
+      city: geo.city,
+      asn: geo.asn,
+      eventCount: ioc.eventCount,
+    });
+  }
+
+  // Attach geo to IOC objects for the intel page
+  for (const ioc of iocs) {
+    if (ioc.type === 'phishing-url') continue;
+    const geo = geoMap[ioc.value];
+    if (geo) {
+      ioc.country = geo.country;
+      ioc.countryName = geo.countryName;
+      ioc.city = geo.city;
+      ioc.coordinates = geo.coordinates;
+    }
+  }
+
+  // Recent critical/high CVEs → map markers scattered deterministically per-CVE
+  for (const cve of cves.filter(c => c.severity === 'critical' || c.severity === 'high').slice(0, 60)) {
+    const hash = cve.id.split('').reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7);
+    const lon = (Math.abs(hash) % 340) - 170;
+    const lat = (Math.abs(hash >> 3) % 120) - 60;
+    events.push({
+      id: `cve-${cve.id}`,
+      category: 'kev',
+      title: `${cve.id} — CVSS ${cve.cvssScore.toFixed(1)}`,
+      description: cve.description.slice(0, 240),
+      coordinates: [lon, lat],
+      date: cve.published,
+      severity: cve.severity,
+      alertLevel: cvssToAlert(cve.cvssScore),
+      source: 'NVD',
+      sourceUrl: `https://nvd.nist.gov/vuln/detail/${cve.id}`,
+      magnitudeLabel: `CVSS ${cve.cvssScore.toFixed(1)}`,
+    });
+  }
+
+  // Sort newest first
+  events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  return { events, cves, kev, iocs, breaches };
 }

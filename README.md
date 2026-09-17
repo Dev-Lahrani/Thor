@@ -1,4 +1,4 @@
-# 🌍 Live Weather & Natural Disaster Tracking
+# ⚡ Thor — Cyber Threat Intelligence Dashboard
 
 <div align="center">
 
@@ -8,9 +8,11 @@
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
 ![Three.js](https://img.shields.io/badge/Three.js-000000?style=for-the-badge&logo=three.js&logoColor=white)
 
-**A real-time natural disaster monitoring and weather tracking web application with a cyberpunk aesthetic.**
+**A live, key-free cyber threat intelligence dashboard — a real-time map of actively
+exploited vulnerabilities, botnet C2 servers, attack sources, phishing infrastructure,
+and data breaches, wrapped in a cyberpunk SOC-style interface.**
 
-[Features](#-features) • [Demo](#-demo) • [Installation](#-installation) • [Usage](#-usage) • [API Sources](#-api-sources) • [Contributing](#-contributing)
+[Features](#-features) • [Installation](#-installation) • [Usage](#-usage) • [Data Sources](#-data-sources)
 
 </div>
 
@@ -18,130 +20,77 @@
 
 ## ✨ Features
 
-### 🗺️ Interactive World Map
-- **Real-time disaster tracking** with live data from multiple sources
-- **Clickable disaster markers** with detailed information popups
-- **SVG-based vector map** with country highlighting
-- **Auto-refresh** every 30 seconds for live updates
+### 🗺️ Live Threat Map
+- **Real-time threat signals** on an interactive SVG world map
+- **Geolocated C2 servers and attack sources** (ipwho.is, cached 7 days)
+- **KEV/CVE "global threat pressure" scatter** — a deliberate visualization that
+  vulnerability exposure is worldwide, not localized
+- **Severity-pulsed markers** tied to CVSS bands (Low → Critical)
+- **Clickable markers** with detail panels (CVSS, ASN, country, source links)
+- **3D globe view** with the same live signals
+- **Auto-refresh** loop with configurable interval
 
-### 🌊 Multi-Source Disaster Data
-- **Earthquakes** - USGS real-time feeds (all magnitudes, past hour/day)
-- **Wildfires** - NASA EONET satellite data
-- **Severe Storms** - NASA EONET weather events
-- **Volcanoes** - NASA EONET volcanic activity
-- **Floods, Droughts, Landslides** - NASA EONET environmental events
+### 🛡️ Vulnerability Intelligence
+- **NVD CVE feed** — recent CVEs with CVSS v3.1 scores, vectors, vendors, and CWE IDs
+- **CISA KEV catalog** — Known Exploited Vulnerabilities with ransomware-campaign
+  flags, CISA required actions, and federal remediation due dates
+- **KEV ↔ CVE join** — every CVE row shows whether it is actively exploited
+- Filter by severity, vendor, or CVE id
 
-### 🌤️ Global Weather Monitoring
-- **76+ major cities** with current weather conditions
-- **Region-based filtering** (North America, Europe, Asia, etc.)
-- **Temperature, humidity, wind speed** and more
-- **Animated weather icons** for visual conditions
-- **Caching system** to handle API rate limits
+### 📡 Threat Intel Feeds
+- **Feodo Tracker** — botnet command-and-control servers (malware family per IP)
+- **DShield/SANS** — top network attack sources with attack counts
+- **OpenPhish** — live phishing URL feed
+- **ISC threat level strip** — current internet storm condition
+- **Copy-as-IOC** — one click to copy any indicator
 
-### 💨 Air Quality Index (AQI)
-- **50+ global cities** with real-time AQI data
-- **Color-coded health levels** (Good → Hazardous)
-- **PM2.5, PM10, Ozone, NO₂** pollutant tracking
-- **Health recommendations** based on AQI levels
+### 💥 Data Breaches
+- **HaveIBeenPwned catalog** — 1,000+ breaches with exposed-account counts
+- **Sensitive/verified badges** and data-class chips
+- Filter by breach name, domain, sensitivity, or verification status
 
-### 🌐 3D Globe Visualization
-- **Interactive Three.js globe** with disaster markers
-- **Orbit controls** for rotation and zoom
-- **Fullscreen mode** for immersive viewing
-- **Real-time marker updates** from disaster data
+### 📊 Trends & Analytics
+- Category distribution (KEV / Malicious IPs / Phishing / Breaches)
+- Severity distribution and CVSS score bands
+- 24-hour signal timeline
 
-### 📊 Disaster Trends & Analytics
-- **Daily frequency charts** showing disaster patterns
-- **Category breakdown** pie charts
-- **Magnitude distribution** bar charts
-- **Historical trend analysis**
-
-### ⭐ Watchlist & Favorites
-- **Save favorite cities** for quick access
-- **Region-based watchlists** for monitoring areas
-- **localStorage persistence** - data saved locally
-- **Quick weather lookup** for saved locations
-
-### ⚖️ Weather Comparison
-- **Side-by-side comparison** of up to 4 cities
-- **Key metrics comparison** (temperature, humidity, wind)
-- **Visual difference indicators**
-
-### 🔔 Real-time Notifications
-- **Toast notifications** for new disasters
-- **Severity-based alerts** (Critical, High, Medium, Low)
-- **Audio alerts** for critical events (optional)
-
-### 📤 Data Export
-- **Export to JSON or CSV** formats
-- **Filtered exports** by disaster type
-- **Full dataset downloads**
+### 🔔 Notifications & Export
+- **Toast notifications** for new high-severity signals (configurable threshold)
+- Optional audio alerts for critical events
+- **Export** to JSON/CSV, KEV catalog, IOC list, or a firewall-ready **IP blocklist**
 
 ---
 
 ## 🎨 Design
 
-The application features a **cyberpunk/tech aesthetic** with:
-- 🌑 Dark theme with glassmorphism effects
-- 💜 Neon accents (cyan, purple, red)
-- ✨ Smooth animations and transitions
-- 📱 Responsive design for all screen sizes
+Cyberpunk/tech aesthetic carried over from the GeoAlert lineage:
 
----
-
-## 📸 Screenshots
-
-### Main Dashboard
-![Main Dashboard](docs/screenshots/dashboard.png)
-- 70% interactive map with disaster markers
-- 30% sidebar with disaster list and controls
-- Real-time stats overlay
-
-### Weather Page
-![Weather Page](docs/screenshots/weather.png)
-- Grid layout of global city weather cards
-- Region filtering and search
-- Animated weather condition icons
-
-### Air Quality Page
-![Air Quality Page](docs/screenshots/air-quality.png)
-- AQI monitoring for major cities
-- Health-based color coding
-- Pollutant breakdown
+- 🌑 Dark theme with glassmorphism panels
+- 💜 Neon accents (cyan, purple, red, orange, pink)
+- ✨ Smooth animations and severity pulses
+- 📱 Responsive layout
 
 ---
 
 ## 🚀 Installation
 
 ### Prerequisites
-- Node.js 18+ 
-- npm or yarn
+- Node.js 18+
+- npm
 
-### Clone the Repository
 ```bash
-git clone https://github.com/Dev-Lahrani/Live-weather-and-Natural-disaster-viewing-using-a-live-map.git
-cd Live-weather-and-Natural-disaster-viewing-using-a-live-map
-```
-
-### Install Dependencies
-```bash
+git clone https://github.com/Dev-Lahrani/Thor.git
+cd Thor
 npm install
-```
-
-### Start Development Server
-```bash
 npm run dev
 ```
 
-The app will be available at `http://localhost:5173` (or next available port).
+The app will be available at `http://localhost:5173`.
 
 ### Build for Production
+
 ```bash
 npm run build
-```
-
-### Preview Production Build
-```bash
 npm run preview
 ```
 
@@ -150,49 +99,44 @@ npm run preview
 ## 📖 Usage
 
 ### Navigation
-- **Home** (`/`) - Main disaster tracking dashboard
-- **Weather** (`/weather`) - Global weather monitoring
-- **Air Quality** (`/air-quality`) - AQI monitoring page
+- **Map** (`/`) — the main threat tracking dashboard
+- **Vulns** (`/vulnerabilities`) — CVE table + KEV cards
+- **Intel** (`/threat-intel`) — C2 / attacker / phishing IOC feeds
+- **Breaches** (`/breaches`) — HIBP breach catalog
 
-### Sidebar Controls
+### Toolbar Controls
 | Button | Function |
 |--------|----------|
-| ⭐ | Open Watchlist/Favorites panel |
-| ⚖️ | Open Weather Comparison tool |
-| 📈 | Open Disaster Trends dashboard |
-| 🌍 | Toggle 3D Globe view |
-| ⚙️ | Open Settings modal |
-| 📤 | Export disaster data |
-| 📅 | View disaster timeline |
+| ⏱ / ☰ | Toggle list vs timeline sidebar |
+| 🌍 | Open 3D globe view |
+| 📈 | Open threat trends dashboard |
+| 📊 | Toggle stats overlay |
+| 📤 | Export data |
+| ⚙️ | Settings (notifications, refresh interval) |
 
-### Filtering Disasters
-1. Use the sidebar filter buttons to show/hide disaster types
-2. Click on map markers for detailed information
-3. Use search to find specific locations
-
-### Watchlist
-1. Click the ⭐ button to open watchlist
-2. Add cities by typing in the search box
-3. View weather for saved locations instantly
+### Searching
+The search bar finds CVE ids, vendors, IPs, domains, and breaches. Selecting a CVE
+opens its NVD entry; selecting a breach opens its HIBP page.
 
 ---
 
-## 🔌 API Sources
+## 🔌 Data Sources
 
 This application uses **free, no-API-key-required** data sources:
 
-| Source | Data Type | Update Frequency |
-|--------|-----------|------------------|
-| [USGS Earthquake API](https://earthquake.usgs.gov/earthquakes/feed/) | Earthquakes | Real-time |
-| [NASA EONET](https://eonet.gsfc.nasa.gov/) | Natural Events | Daily |
-| [Open-Meteo](https://open-meteo.com/) | Weather & AQI | Hourly |
+| Source | Data | Update |
+|--------|------|--------|
+| [NIST NVD](https://nvd.nist.gov/) | CVE records (3-day window) | ~15 min cache |
+| [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | Actively exploited vulns (180-day window) | 30 min cache |
+| [abuse.ch Feodo Tracker](https://feodotracker.abuse.ch/) | Botnet C2 servers | 30 min cache |
+| [DShield/ISC](https://isc.sans.edu/) | Attack sources + threat level | 60 min cache |
+| [OpenPhish](https://openphish.com/) | Phishing URLs | 30 min cache |
+| [HaveIBeenPwned](https://haveibeenpwned.com/) | Public breach catalog | 6 h cache |
+| [ipwho.is](https://ipwho.is/) | IOC geolocation | 7-day localStorage cache |
 
-### Rate Limits
-- **Open-Meteo**: 10,000 requests/day (free tier)
-- **USGS**: No limit
-- **NASA EONET**: No limit
-
-The app includes **intelligent caching** (30-minute cache) to stay within rate limits.
+Feeds without CORS headers (CISA KEV, Feodo) are fetched through a public read relay
+with direct-fetch fallback. All data is consumed **client-side** — no backend, no keys,
+nothing to leak.
 
 ---
 
@@ -201,37 +145,38 @@ The app includes **intelligent caching** (30-minute cache) to stay within rate l
 ```
 src/
 ├── components/
-│   ├── AnimatedWeatherIcon.tsx   # CSS-animated weather icons
-│   ├── DisasterTrends.tsx        # Charts and analytics
-│   ├── ExportModal.tsx           # Data export functionality
-│   ├── Footer.tsx                # App footer
-│   ├── Globe3D.tsx               # Three.js globe visualization
-│   ├── Header.tsx                # Navigation header
-│   ├── LoadingScreen.tsx         # Initial loading animation
-│   ├── NotificationToast.tsx     # Alert notifications
-│   ├── RealWorldMap.tsx          # Interactive SVG world map
-│   ├── SearchBar.tsx             # Location search
-│   ├── SettingsModal.tsx         # App settings
-│   ├── Sidebar.tsx               # Disaster list sidebar
-│   ├── StatsOverlay.tsx          # Statistics display
-│   ├── TimelineView.tsx          # Disaster timeline
-│   ├── Watchlist.tsx             # Favorites management
-│   ├── WeatherCompare.tsx        # City comparison tool
-│   └── index.ts                  # Component exports
+│   ├── ThreatMap.tsx         # SVG world map with threat markers
+│   ├── Header.tsx            # Brand + nav + category filters + stats
+│   ├── Sidebar.tsx           # Threat list + detail panel
+│   ├── StatsOverlay.tsx      # Threat statistics overlay
+│   ├── SearchBar.tsx         # CVE / vendor / IP / domain search
+│   ├── NotificationToast.tsx # Severity-based alert notifications
+│   ├── TimelineView.tsx      # Chronological signal timeline
+│   ├── ExportModal.tsx       # JSON/CSV/blocklist export
+│   ├── SettingsModal.tsx     # Notifications + refresh settings
+│   ├── ThreatTrends.tsx      # Charts and analytics
+│   ├── Globe3D.tsx           # Three.js 3D threat globe
+│   ├── LoadingScreen.tsx     # Boot animation
+│   ├── Footer.tsx            # Data source credits
+│   └── index.ts              # Component exports
+├── context/
+│   └── ThreatContext.tsx     # Shared state: feeds, filters, notifications
 ├── pages/
-│   ├── AirQualityPage.tsx        # AQI monitoring page
-│   ├── WeatherPage.tsx           # Global weather page
-│   └── index.ts                  # Page exports
+│   ├── Layout.tsx            # Persistent shell (header/footer/modals)
+│   ├── MapView.tsx           # Main map dashboard
+│   ├── VulnerabilitiesPage.tsx
+│   ├── ThreatIntelPage.tsx
+│   ├── DataBreachPage.tsx
+│   └── index.ts
 ├── services/
-│   └── api.ts                    # API integration
+│   └── api.ts                # Feed layer: NVD, KEV, Feodo, DShield, OpenPhish, HIBP
 ├── types/
-│   └── index.ts                  # TypeScript types
+│   └── index.ts              # TypeScript types
 ├── utils/
-│   └── helpers.ts                # Utility functions
-├── App.tsx                       # Main app component
-├── App.css                       # App styles
-├── main.tsx                      # React entry point
-└── index.css                     # Global styles (Tailwind)
+│   ├── helpers.ts            # Category/severity styling + formatters
+│   └── audio.ts              # Notification chime
+├── main.tsx                  # Routes + provider
+└── index.css                 # Global styles (Tailwind v4)
 ```
 
 ---
@@ -254,23 +199,21 @@ src/
 
 ## ⚙️ Configuration
 
-### Environment Variables (Optional)
-No API keys required! All APIs used are free and open.
+No API keys required — every feed is public and consumed client-side.
 
-### Tailwind Theme
-Custom colors defined in `src/index.css`:
+Theme tokens live in `src/index.css`:
+
 ```css
---neon-cyan: #00f5ff
---neon-purple: #bf00ff
---neon-red: #ff0040
---neon-green: #00ff88
+--neon-cyan: #00d4ff
+--neon-purple: #a855f7
+--neon-red: #ef4444
+--neon-orange: #f97316
+--neon-pink: #ec4899
 ```
 
 ---
 
 ## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
 
 1. **Fork** the repository
 2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
@@ -278,25 +221,20 @@ Contributions are welcome! Please follow these steps:
 4. **Push** to the branch (`git push origin feature/amazing-feature`)
 5. **Open** a Pull Request
 
-### Development Guidelines
-- Follow TypeScript best practices
-- Use functional components with hooks
-- Maintain the cyberpunk aesthetic
-- Test on multiple screen sizes
-
 ---
 
 ## 📄 License
 
-This project is open source and available under the [MIT License](LICENSE).
+MIT License — see [LICENSE](LICENSE).
 
 ---
 
 ## 🙏 Acknowledgments
 
-- **NASA EONET** for natural event data
-- **USGS** for earthquake data
-- **Open-Meteo** for weather and AQI data
+- **CISA** for the Known Exploited Vulnerabilities catalog
+- **NIST** for the National Vulnerability Database
+- **abuse.ch**, **DShield/ISC**, and **OpenPhish** for IOC feeds
+- **HaveIBeenPwned** for the breach catalog
 - **Three.js** community for 3D visualization tools
 
 ---
@@ -305,14 +243,12 @@ This project is open source and available under the [MIT License](LICENSE).
 
 **Dev Lahrani** - [@Dev-Lahrani](https://github.com/Dev-Lahrani)
 
-Project Link: [https://github.com/Dev-Lahrani/Live-weather-and-Natural-disaster-viewing-using-a-live-map](https://github.com/Dev-Lahrani/Live-weather-and-Natural-disaster-viewing-using-a-live-map)
+Project Link: [https://github.com/Dev-Lahrani/Thor](https://github.com/Dev-Lahrani/Thor)
 
 ---
 
 <div align="center">
 
-**⭐ Star this repo if you find it useful! ⭐**
-
-Made with ❤️ and ☕
+**⚡ Cyber Threat Intelligence, live and key-free. ⚡**
 
 </div>

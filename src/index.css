@@ -25,13 +25,11 @@
   --color-neon-blue: #3b82f6;
   --color-neon-pink: #ec4899;
   
-  /* Disaster category colors - refined */
-  --color-earthquake: #ef4444;
-  --color-flood: #0ea5e9;
-  --color-wildfire: #f97316;
-  --color-storm: #a855f7;
-  --color-volcano: #dc2626;
-  --color-weather: #00d4ff;
+  /* Threat category colors — KEV red, malicious IP orange, phishing pink, breach purple */
+  --color-kev: #ef4444;
+  --color-malicious-ip: #f97316;
+  --color-phishing: #ec4899;
+  --color-breach: #a855f7;
   
   /* UI accent colors */
   --color-accent-primary: #00d4ff;
