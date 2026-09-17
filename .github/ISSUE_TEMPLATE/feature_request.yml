@@ -1,0 +1,71 @@
+name: 💡 Feature request
+description: Suggest an idea or improvement for Thor
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Got an idea to make Thor better? We'd love to hear it! 💡
+        Check [ROADMAP.md](https://github.com/Dev-Lahrani/Thor/blob/main/ROADMAP.md) first — your idea might already be planned.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what's in your way? Describe the problem, not the solution.
+      placeholder: As a threat analyst, I want… but…
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches or workarounds you've tried.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area would this touch?
+      options:
+        - Map / 3D Globe
+        - Vulnerabilities page
+        - Threat Intel page
+        - Breaches page
+        - Trends / charts
+        - Export
+        - Notifications / settings
+        - Search
+        - New data source / feed
+        - Performance
+        - Docs
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I'm willing to help implement this (get assigned! 🎉)
+          required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and the roadmap for duplicates
+          required: true

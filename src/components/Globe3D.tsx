@@ -1,14 +1,11 @@
 import React, { useRef, useMemo, useState } from 'react';
 import type { JSX } from 'react';
-import { Canvas, useFrame, extend } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Sphere, Html, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import type { ThreatEvent } from '../types';
 import { X, Globe as GlobeIcon, Maximize2, Minimize2 } from 'lucide-react';
 import { CATEGORY_INFO } from '../utils/helpers';
-
-// Extend THREE elements
-extend({ Line_: THREE.Line });
 
 interface Globe3DProps {
   events: ThreatEvent[];
@@ -53,8 +50,6 @@ const Earth: React.FC<{ autoRotate: boolean }> = ({ autoRotate }) => {
 
 // Grid lines on the globe
 const GlobeGrid: React.FC = () => {
-  const gridRef = useRef<THREE.Group>(null);
-
   const gridLines = useMemo(() => {
     const lines: JSX.Element[] = [];
     const radius = 2.02;
@@ -86,7 +81,7 @@ const GlobeGrid: React.FC = () => {
     return lines;
   }, []);
 
-  return <group ref={gridRef}>{gridLines}</group>;
+  return <group>{gridLines}</group>;
 };
 
 // Threat marker component

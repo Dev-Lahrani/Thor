@@ -27,6 +27,10 @@ export type ThreatSource =
   | 'HIBP'
   | 'ISC';
 
+// Connectivity status per configured feed, keyed by feed id (nvd, kev, feodo,
+// dshield, openphish, hibp). 'ok' = data returned, 'error' = fetch/parse failed.
+export type FeedStatusMap = Record<string, 'ok' | 'error'>;
+
 // ------------------------------------------------------------
 // CVE vulnerability (NVD)
 // ------------------------------------------------------------
@@ -108,6 +112,9 @@ export interface ThreatEvent {
   magnitudeLabel?: string;       // e.g. "CVSS 9.8" or malware family
   asn?: string;
   eventCount?: number;           // e.g. attack count for DShield
+  // True when coordinates are a deterministic hash-scatter (KEV/CVE entries have
+  // no real geolocation) rather than an observed location.
+  approxLocation?: boolean;
 }
 
 // ------------------------------------------------------------

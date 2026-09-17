@@ -15,9 +15,10 @@ import {
   useMemo,
   type ReactNode,
 } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { fetchThreatFeeds } from '../services/api';
 import { NOTIFICATION_SOUND } from '../utils/audio';
-import { SEVERITY_ORDER, severityIndex } from '../utils/helpers';
+import { severityIndex } from '../utils/helpers';
 import type {
   ThreatEvent,
   CveRecord,
@@ -27,15 +28,38 @@ import type {
   FilterState,
   ThreatCategory,
   SeverityLevel,
+  FeedStatusMap,
 } from '../types';
 
 export interface UserSettings {
-  theme: 'dark' | 'light' | 'system';
   notificationsEnabled: boolean;
   soundEnabled: boolean;
   autoRefresh: boolean;
   refreshInterval: number; // seconds
   minSeverityNotification: SeverityLevel;
+}
+
+const SETTINGS_STORAGE_KEY = 'thor_settings_v1';
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const DEFAULT_SETTINGS: UserSettings = {
+  notificationsEnabled: true,
+  soundEnabled: false,
+  autoRefresh: true,
+  refreshInterval: 300,
+  minSeverityNotification: 'high',
+};
+
+function loadSettings(): UserSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return DEFAULT_SETTINGS;
+    const parsed = JSON.parse(raw) as Partial<UserSettings>;
+    // Merge over defaults so new fields added later stay valid
+    return { ...DEFAULT_SETTINGS, ...parsed };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
 }
 
 export interface ThreatNotification {
@@ -57,6 +81,7 @@ interface ThreatContextValue {
   loading: boolean;
   error: string | null;
   lastUpdated: Date | null;
+  feedStatus: FeedStatusMap;
 
   // Selection & filtering
   selectedEvent: ThreatEvent | null;
@@ -93,16 +118,6 @@ interface ThreatContextValue {
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export const DEFAULT_SETTINGS: UserSettings = {
-  theme: 'dark',
-  notificationsEnabled: true,
-  soundEnabled: false,
-  autoRefresh: true,
-  refreshInterval: 300,
-  minSeverityNotification: 'high',
-};
-
-// eslint-disable-next-line react-refresh/only-export-components
 export const DEFAULT_FILTERS: FilterState = {
   kev: true,
   maliciousIp: true,
@@ -121,12 +136,15 @@ export const ThreatProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [feedStatus, setFeedStatus] = useState<FeedStatusMap>({});
+
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [selectedEvent, setSelectedEvent] = useState<ThreatEvent | null>(null);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
 
   const [notifications, setNotifications] = useState<ThreatNotification[]>([]);
-  const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<UserSettings>(loadSettings);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
@@ -182,6 +200,7 @@ export const ThreatProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       setKev(result.kev);
       setIocs(result.iocs);
       setBreaches(result.breaches);
+      setFeedStatus(result.feedStatus);
       setLastUpdated(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch threat feeds');
@@ -190,14 +209,43 @@ export const ThreatProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   }, []);
 
-  // Initial fetch + auto-refresh loop
+  // Initial fetch — runs once, independent of refresh settings so changing
+  // the interval doesn't trigger a redundant immediate refetch.
   useEffect(() => {
     void refresh();
+  }, [refresh]);
 
+  // Auto-refresh loop
+  useEffect(() => {
     if (!settings.autoRefresh) return;
     const interval = setInterval(() => void refresh(), settings.refreshInterval * 1000);
     return () => clearInterval(interval);
   }, [refresh, settings.autoRefresh, settings.refreshInterval]);
+
+  // Persist settings across reloads
+  useEffect(() => {
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    } catch {
+      /* storage unavailable */
+    }
+  }, [settings]);
+
+  // Deep link: ?event=<id> selects that event once events have loaded
+  const [deepLinkApplied, setDeepLinkApplied] = useState(false);
+  useEffect(() => {
+    if (deepLinkApplied || events.length === 0) return;
+    const eventId = searchParams.get('event');
+    if (!eventId) return;
+    const match = events.find(e => e.id === eventId);
+    if (match) {
+      setSelectedEvent(match);
+      setDeepLinkApplied(true);
+      // Strip the param so a manual refresh doesn't re-trigger
+      searchParams.delete('event');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [events, searchParams, setSearchParams, deepLinkApplied]);
 
   const toggleFilter = useCallback((category: ThreatCategory) => {
     setFilters(prev => ({ ...prev, [category]: !prev[category] }));
@@ -243,6 +291,7 @@ export const ThreatProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     loading,
     error,
     lastUpdated,
+    feedStatus,
     selectedEvent,
     filters,
     filteredEvents,
@@ -281,5 +330,3 @@ export function useThreat(): ThreatContextValue {
   }
   return ctx;
 }
-
-export { SEVERITY_ORDER };

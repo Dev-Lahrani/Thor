@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useThreat } from '../context/ThreatContext';
 import type { IocType } from '../types';
 import { formatRelativeTime } from '../utils/helpers';
@@ -59,10 +60,31 @@ function parseInfocon(data: InfoconResponse | null): { info: InfoconInfo | null;
 
 export const ThreatIntelPage: React.FC = () => {
   const { iocs } = useThreat();
+  const location = useLocation();
   const [tab, setTab] = useState<IocTab>('c2');
   const [query, setQuery] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [infocon, setInfocon] = useState<InfoconResponse | null>(null);
+  const [highlightedIocId, setHighlightedIocId] = useState<string | null>(null);
+
+  // Prefill from a search-bar IOC selection (navigated with state: { focusIoc })
+  useEffect(() => {
+    const focusIoc = (location.state as { focusIoc?: string } | null)?.focusIoc;
+    if (!focusIoc) return;
+    const ioc = iocs.find(i => i.id === focusIoc);
+    if (!ioc) return;
+    const tabByType: Record<IocType, IocTab> = {
+      'c2-ip': 'c2',
+      'attacker-ip': 'attackers',
+      'phishing-url': 'phishing',
+    };
+    setTab(tabByType[ioc.type]);
+    setQuery(ioc.value);
+    setHighlightedIocId(ioc.id);
+    // Clear the nav state so back/forward doesn't re-trigger the prefill
+    window.history.replaceState({}, '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   // ISC threat level strip (nice-to-have, feed verified)
   useEffect(() => {
@@ -201,7 +223,14 @@ export const ThreatIntelPage: React.FC = () => {
                 </tr>
               ) : (
                 filtered.map(ioc => (
-                  <tr key={ioc.id} className="border-b border-white/5 hover:bg-white/[0.03] transition-colors">
+                  <tr
+                    key={ioc.id}
+                    className={`border-b border-white/5 transition-colors ${
+                      highlightedIocId === ioc.id
+                        ? 'bg-neon-cyan/10 outline outline-1 outline-neon-cyan/40'
+                        : 'hover:bg-white/[0.03]'
+                    }`}
+                  >
                     <td className="px-4 py-3">
                       {ioc.type === 'phishing-url' ? (
                         <span className="font-mono text-pink-400 text-xs">{ioc.value}</span>

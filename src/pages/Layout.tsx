@@ -13,6 +13,7 @@ export const Layout: React.FC = () => {
     loading,
     error,
     lastUpdated,
+    feedStatus,
     selectedEvent,
     filters,
     filteredEvents,
@@ -99,6 +100,20 @@ export const Layout: React.FC = () => {
       {error && (
         <div className="fixed bottom-12 left-1/2 -translate-x-1/2 z-50 glass rounded-lg p-3 border border-neon-red/30 animate-fade-in">
           <p className="text-xs text-neon-red">Feed error: {error}</p>
+        </div>
+      )}
+
+      {/* Degraded-mode indicator: feeds that failed but didn't hard-error */}
+      {!loading && Object.entries(feedStatus).some(([, s]) => s === 'error') && !error && (
+        <div className="fixed bottom-12 left-1/2 -translate-x-1/2 z-50 glass rounded-lg px-3 py-2 border border-neon-orange/30 animate-fade-in">
+          <p className="text-xs text-neon-orange">
+            ⚠ Some feeds unavailable:{' '}
+            {Object.entries(feedStatus)
+              .filter(([, s]) => s === 'error')
+              .map(([id]) => id)
+              .join(', ')}{' '}
+            — showing cached/partial data
+          </p>
         </div>
       )}
     </div>

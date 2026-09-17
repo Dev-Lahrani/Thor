@@ -2,15 +2,10 @@ import React, { useState } from 'react';
 import { X, AlertTriangle, Bell, Volume2, VolumeX, ShieldAlert } from 'lucide-react';
 import type { ThreatEvent } from '../types';
 import { SEVERITY_COLORS } from '../utils/helpers';
-
-interface ThreatNotification {
-  id: string;
-  event: ThreatEvent;
-  timestamp: Date;
-  read: boolean;
-}
+import type { ThreatNotification } from '../context/ThreatContext';
 
 interface NotificationToastProps {
+  /** Re-declared locally so prop docs stay attached; structurally identical to the context type. */
   notifications: ThreatNotification[];
   onDismiss: (id: string) => void;
   onDismissAll: () => void;
@@ -174,10 +169,7 @@ export const NotificationToast: React.FC<NotificationToastProps> = ({
               </div>
             );
           })}
-        </div>
-      )}
+        </div>      )}
     </div>
   );
 };
-
-export type { ThreatNotification };

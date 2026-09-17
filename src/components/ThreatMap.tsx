@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { ThreatEvent, SeverityLevel, ThreatCategory } from '../types';
 import { CATEGORY_INFO, SEVERITY_MAP_COLORS, ALERT_PULSE_SPEEDS } from '../utils/helpers';
 import {
@@ -96,6 +96,13 @@ export const ThreatMap: React.FC<ThreatMapProps> = ({
   const [loading, setLoading] = useState(true);
   const svgRef = useRef<SVGSVGElement>(null);
 
+  // Categories actually present in the data (drives the legend)
+  const presentCategories = useMemo(() => {
+    const set = new Set<ThreatCategory>();
+    events.forEach(e => set.add(e.category));
+    return set;
+  }, [events]);
+
   const WIDTH = 1000;
   const HEIGHT = 500;
 
@@ -172,10 +179,18 @@ export const ThreatMap: React.FC<ThreatMapProps> = ({
     setIsDragging(false);
   }, []);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom(prev => Math.max(0.5, Math.min(8, prev * delta)));
+  // Wheel zoom via a native non-passive listener — React's synthetic onWheel
+  // is passive, so preventDefault() there logs warnings and lets the page scroll.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom(prev => Math.max(0.5, Math.min(8, prev * delta)));
+    };
+    svg.addEventListener('wheel', onWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', onWheel);
   }, []);
 
   const isEventSelected = (event: ThreatEvent) => {
@@ -250,7 +265,6 @@ export const ThreatMap: React.FC<ThreatMapProps> = ({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
         style={{
           transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
           transformOrigin: 'center',
@@ -399,12 +413,13 @@ export const ThreatMap: React.FC<ThreatMapProps> = ({
                 style={shouldPulse ? { animationDelay: '0.4s', animationDuration: pulseSpeed } : {}}
               />
 
-              {/* Main marker */}
+              {/* Main marker — dashed stroke marks hash-scattered (non-geolocated) events */}
               <circle
                 r={baseSize}
                 fill={severityColors.fill}
                 stroke={isSelected ? '#fff' : severityColors.stroke}
                 strokeWidth={isSelected ? 2.5 : 1.5}
+                strokeDasharray={event.approxLocation ? '2.5 2' : undefined}
                 className={shouldPulse ? "marker-pulse-dot" : ""}
               />
 
@@ -444,6 +459,7 @@ export const ThreatMap: React.FC<ThreatMapProps> = ({
       {/* Legend */}
       <div className="absolute bottom-4 left-4 glass rounded-lg p-3 z-10">
         <div className="text-xs text-gray-400 mb-2 font-mono uppercase tracking-wider">Severity</div>
+        <div className="text-[9px] text-gray-500 font-mono mb-2">- - - scatter = no geo data</div>
         <div className="flex flex-col gap-1.5 mb-3">
           {(['low', 'medium', 'high', 'critical'] as SeverityLevel[]).map((sev) => {
             const colors = SEVERITY_MAP_COLORS[sev];
@@ -460,15 +476,17 @@ export const ThreatMap: React.FC<ThreatMapProps> = ({
         </div>
         <div className="text-xs text-gray-400 mb-2 font-mono uppercase tracking-wider border-t border-white/10 pt-2">Categories</div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-          {Object.values(CATEGORY_INFO).map((info) => (
-            <div key={info.id} className="flex items-center gap-1.5">
-              <div
-                className="w-2.5 h-2.5 rounded-full"
-                style={{ backgroundColor: info.color, boxShadow: `0 0 6px ${info.color}` }}
-              />
-              <span className="text-[10px] text-gray-300">{info.label}</span>
-            </div>
-          ))}
+          {Object.values(CATEGORY_INFO)
+            .filter(info => presentCategories.has(info.id))
+            .map((info) => (
+              <div key={info.id} className="flex items-center gap-1.5">
+                <div
+                  className="w-2.5 h-2.5 rounded-full"
+                  style={{ backgroundColor: info.color, boxShadow: `0 0 6px ${info.color}` }}
+                />
+                <span className="text-[10px] text-gray-300">{info.label}</span>
+              </div>
+            ))}
         </div>
       </div>
 

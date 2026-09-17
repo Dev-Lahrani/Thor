@@ -9,6 +9,7 @@ interface SearchBarProps {
   iocs: IocIndicator[];
   breaches: BreachRecord[];
   onSelectEvent: (event: ThreatEvent) => void;
+  onSelectIoc: (ioc: IocIndicator) => void;
 }
 
 interface SearchMatch {
@@ -26,6 +27,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   iocs,
   breaches,
   onSelectEvent,
+  onSelectIoc,
 }) => {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -116,6 +118,9 @@ export const SearchBar: React.FC<SearchBarProps> = ({
       window.open(`https://nvd.nist.gov/vuln/detail/${match.id}`, '_blank', 'noopener,noreferrer');
     } else if (match.type === 'breach') {
       window.open(`https://haveibeenpwned.com/Breach/${encodeURIComponent(match.id)}`, '_blank', 'noopener,noreferrer');
+    } else if (match.type === 'ioc') {
+      const ioc = iocs.find(i => i.id === match.id);
+      if (ioc) onSelectIoc(ioc);
     }
     setQuery('');
     setIsOpen(false);

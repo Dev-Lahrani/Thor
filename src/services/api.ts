@@ -18,6 +18,7 @@ import type {
   FeodoEntry,
   ThreatSource,
   ThreatCategory,
+  FeedStatusMap,
 } from '../types';
 
 // ------------------------------------------------------------
@@ -34,6 +35,7 @@ const CORS_RELAY = 'https://r.jina.ai/';
 
 const GEO_CACHE_KEY = 'thor_geo_cache_v1';
 const GEO_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 1 week
+const GEO_CACHE_MAX_ENTRIES = 5000; // cap so the cache can't grow unbounded
 
 // ------------------------------------------------------------
 // Simple TTL cache
@@ -146,7 +148,7 @@ export async function fetchRecentCves(days = 3, maxResults = 150): Promise<CveRe
   });
 }
 
-function normalizeNvdCve(item: NvdCveItem): CveRecord | null {
+export function normalizeNvdCve(item: NvdCveItem): CveRecord | null {
   const cve = item.cve;
   const metrics = cve.metrics || {};
 
@@ -293,13 +295,31 @@ interface DshieldSource {
   lastseen?: string;
 }
 
+function isDshieldSourceArray(raw: unknown): raw is DshieldSource[] {
+  return (
+    Array.isArray(raw) &&
+    raw.every(
+      s =>
+        typeof s === 'object' &&
+        s !== null &&
+        typeof (s as { source?: unknown }).source === 'string'
+    )
+  );
+}
+
 export async function fetchAttackerIps(): Promise<IocIndicator[]> {
   return cached('dshield', 60 * 60 * 1000, async () => {
     try {
       const res = await fetch(DSHIELD_SOURCES);
       if (!res.ok) return [];
-      const data: DshieldSource[] = await res.json();
-      return data
+      const raw: unknown = await res.json();
+      // Guard against unexpected response shapes (e.g. nested payloads) —
+      // a blind cast would produce garbage rows with no error.
+      if (!isDshieldSourceArray(raw)) {
+        console.error('[Thor] DShield: unexpected response shape, skipping');
+        return [];
+      }
+      return (raw as DshieldSource[])
         .filter(s => s.source)
         .map(s => ({
           id: `dshield-${s.source}`,
@@ -408,6 +428,14 @@ function loadGeoCache(): Record<string, GeoEntry> {
 
 function saveGeoCache(c: Record<string, GeoEntry>) {
   try {
+    // Evict stale-then-oldest entries when over the cap
+    const keys = Object.keys(c);
+    if (keys.length > GEO_CACHE_MAX_ENTRIES) {
+      keys
+        .sort((a, b) => (c[a].fetchedAt || 0) - (c[b].fetchedAt || 0))
+        .slice(0, keys.length - GEO_CACHE_MAX_ENTRIES)
+        .forEach(k => delete c[k]);
+    }
     localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(c));
   } catch { /* storage full/unavailable */ }
 }
@@ -478,16 +506,31 @@ export interface ThreatFeedResult {
   kev: KevEntry[];
   iocs: IocIndicator[];
   breaches: BreachRecord[];
+  feedStatus: FeedStatusMap;
 }
 
 export async function fetchThreatFeeds(): Promise<ThreatFeedResult> {
+  const feedStatus: FeedStatusMap = {};
+
+  type FeedId = 'nvd' | 'kev' | 'feodo' | 'dshield' | 'openphish' | 'hibp';
+  const track = async <T>(id: FeedId, fn: () => Promise<T[]>): Promise<T[]> => {
+    try {
+      const rows = await fn();
+      feedStatus[id] = 'ok';
+      return rows;
+    } catch {
+      feedStatus[id] = 'error';
+      return [];
+    }
+  };
+
   const [cves, kev, c2Ips, attackerIps, phishing, breaches] = await Promise.all([
-    fetchRecentCves(3, 150),
-    fetchKevEntries(),
-    fetchC2Ips(),
-    fetchAttackerIps(),
-    fetchPhishingUrls(40),
-    fetchBreaches(),
+    track('nvd', () => fetchRecentCves(3, 150)),
+    track('kev', fetchKevEntries),
+    track('feodo', fetchC2Ips),
+    track('dshield', fetchAttackerIps),
+    track('openphish', () => fetchPhishingUrls(40)),
+    track('hibp', fetchBreaches),
   ]);
 
   const iocs = [...c2Ips, ...attackerIps, ...phishing];
@@ -524,6 +567,7 @@ export async function fetchThreatFeeds(): Promise<ThreatFeedResult> {
       sourceUrl: `https://nvd.nist.gov/vuln/detail/${k.cveID}`,
       magnitudeLabel: k.knownRansomwareCampaignUse === 'Known' ? 'RANSOMWARE' : 'KEV',
       eventCount: Math.round(ageDays),
+      approxLocation: true,
     });
   }
 
@@ -532,8 +576,8 @@ export async function fetchThreatFeeds(): Promise<ThreatFeedResult> {
     if (ioc.type === 'phishing-url') continue;
     const geo = geoMap[ioc.value];
     if (!geo?.coordinates) continue;
-    const category: ThreatCategory = ioc.type === 'c2-ip' ? 'maliciousIp' : 'maliciousIp';
     const isC2 = ioc.type === 'c2-ip';
+    const category: ThreatCategory = 'maliciousIp';
     const sev: SeverityLevel = isC2 ? 'critical' : 'high';
     events.push({
       id: ioc.id,
@@ -569,6 +613,8 @@ export async function fetchThreatFeeds(): Promise<ThreatFeedResult> {
   }
 
   // Recent critical/high CVEs → map markers scattered deterministically per-CVE
+  // (CVEs have no geolocation — coordinates are a stable hash-scatter; the
+  // approxLocation flag tells the UI to render these as "global pressure")
   for (const cve of cves.filter(c => c.severity === 'critical' || c.severity === 'high').slice(0, 60)) {
     const hash = cve.id.split('').reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7);
     const lon = (Math.abs(hash) % 340) - 170;
@@ -585,11 +631,12 @@ export async function fetchThreatFeeds(): Promise<ThreatFeedResult> {
       source: 'NVD',
       sourceUrl: `https://nvd.nist.gov/vuln/detail/${cve.id}`,
       magnitudeLabel: `CVSS ${cve.cvssScore.toFixed(1)}`,
+      approxLocation: true,
     });
   }
 
   // Sort newest first
   events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  return { events, cves, kev, iocs, breaches };
+  return { events, cves, kev, iocs, breaches, feedStatus };
 }

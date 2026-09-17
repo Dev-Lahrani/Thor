@@ -34,7 +34,7 @@ export const CATEGORY_INFO: Record<ThreatCategory, CategoryInfo> = {
   },
 };
 
-export const CATEGORY_ORDER: ThreatCategory[] = ['kev', 'maliciousIp', 'phishing', 'breach'];
+export const CATEGORY_ORDER: Array<CategoryInfo['id']> = ['kev', 'maliciousIp', 'phishing', 'breach'];
 
 // ------------------------------------------------------------
 // Severity styling — CVSS bands (low / medium / high / critical)
@@ -113,7 +113,8 @@ export function formatCompactNumber(n: number): string {
 }
 
 // ------------------------------------------------------------
-// Map projection — [lon, lat] to SVG viewBox 0 0 1000 500
+// Map projection — [lon, lat] to SVG viewBox 0 0 1000 500 (equirectangular,
+// matches the TopoJSON land rendering in ThreatMap)
 // ------------------------------------------------------------
 export function coordsToMapPosition(lon: number, lat: number): { x: number; y: number } {
   const x = ((lon + 180) / 360) * 1000;

@@ -1,8 +1,6 @@
 import React from 'react';
 import {
   X,
-  Moon,
-  Sun,
   Bell,
   Volume2,
   VolumeX,
@@ -65,30 +63,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* Content */}
           <div className="p-5 space-y-6 max-h-[60vh] overflow-y-auto">
-            {/* Theme */}
-            <div>
-              <label className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-3 block">Theme</label>
-              <div className="flex gap-2">
-                {[
-                  { value: 'dark', icon: Moon, label: 'Dark' },
-                  { value: 'light', icon: Sun, label: 'Light' },
-                ].map(({ value, icon: Icon, label }) => (
-                  <button
-                    key={value}
-                    onClick={() => onUpdateSettings({ theme: value as 'dark' | 'light' })}
-                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl transition-all duration-300 text-sm font-medium ${
-                      settings.theme === value
-                        ? 'bg-gradient-to-r from-neon-cyan/15 to-blue-500/15 text-neon-cyan border border-neon-cyan/30 shadow-lg shadow-neon-cyan/10'
-                        : 'bg-white/[0.03] text-gray-400 hover:bg-white/[0.06] border border-transparent hover:border-white/10'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* Notifications */}
             <div>
               <label className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">

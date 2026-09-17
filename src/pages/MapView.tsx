@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ThreatMap,
   Sidebar,
@@ -8,6 +9,7 @@ import {
 } from '../components';
 import { useThreat } from '../context/ThreatContext';
 import { AlertTriangle, Settings, Download, BarChart3, Clock, List, TrendingUp, Globe } from 'lucide-react';
+import type { IocIndicator } from '../types';
 
 export const MapView: React.FC = () => {
   const {
@@ -30,6 +32,12 @@ export const MapView: React.FC = () => {
     refresh,
   } = useThreat();
 
+  const navigate = useNavigate();
+
+  const handleSelectIoc = (ioc: IocIndicator) => {
+    navigate('/threat-intel', { state: { focusIoc: ioc.id } });
+  };
+
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
@@ -41,6 +49,7 @@ export const MapView: React.FC = () => {
             iocs={iocs}
             breaches={breaches}
             onSelectEvent={selectEvent}
+            onSelectIoc={handleSelectIoc}
           />
         </div>
 

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Questions & discussions
+    url: https://github.com/Dev-Lahrani/Thor/discussions
+    about: Ask questions, share how you use Thor, or propose ideas before filing a formal request.
+  - name: 🔒 Security vulnerability
+    url: https://github.com/Dev-Lahrani/Thor/security/advisories/new
+    about: Report security issues privately — please do not open a public issue.

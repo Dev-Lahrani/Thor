@@ -1,40 +1,65 @@
-# ⚡ Thor — Cyber Threat Intelligence Dashboard
-
 <div align="center">
 
-![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
-![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
-![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
-![Three.js](https://img.shields.io/badge/Three.js-000000?style=for-the-badge&logo=three.js&logoColor=white)
+# ⚡ Thor
 
-**A live, key-free cyber threat intelligence dashboard — a real-time map of actively
-exploited vulnerabilities, botnet C2 servers, attack sources, phishing infrastructure,
-and data breaches, wrapped in a cyberpunk SOC-style interface.**
+**A live, key-free cyber threat intelligence dashboard.**
 
-[Features](#-features) • [Installation](#-installation) • [Usage](#-usage) • [Data Sources](#-data-sources)
+Real-time map of actively exploited vulnerabilities, botnet C2 servers, attack
+sources, phishing infrastructure, and data breaches — wrapped in a cyberpunk
+SOC-style interface. No API keys. No accounts. No telemetry.
+
+[![CI](https://github.com/Dev-Lahrani/Thor/actions/workflows/ci.yml/badge.svg)](https://github.com/Dev-Lahrani/Thor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Tests](https://img.shields.io/badge/tests-35%20passing-success)](#-development)
+[![React 19](https://img.shields.io/badge/React-19-20232A?logo=react&logoColor=61DAFB)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-007ACC?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+
+![Thor dashboard — live threat map](docs/screenshots/dashboard.png)
 
 </div>
 
 ---
 
+## Why Thor?
+
+Most threat-intel tooling is either enterprise-priced, buried behind API keys,
+or ugly terminal output. Thor aggregates the **best free intelligence feeds**
+into a single live dashboard you can run in 30 seconds:
+
+- 🔓 **Zero configuration** — clone, install, run. Nothing to sign up for.
+- 🌍 **Geospatial** — see where threats originate, not just lists of IPs.
+- 🎯 **Exploit-focused** — CISA KEV data means you see what's *actually being
+  exploited*, not just what's newly disclosed.
+- 📤 **Actionable** — export IOCs as CSV/JSON or a firewall-ready blocklist.
+- 🔒 **Private by design** — client-side only; no backend, no keys, no tracking.
+
+## 🖼️ Screenshots
+
+| Vulnerabilities | Threat Intel |
+|---|---|
+| ![CVE table with KEV join](docs/screenshots/vulnerabilities.png) | ![IOC feeds](docs/screenshots/threat-intel.png) |
+
+| Data Breaches | 3D Globe & Trends |
+|---|---|
+| ![HIBP breach catalog](docs/screenshots/breaches.png) | *3D globe view with the same live signals* |
+
 ## ✨ Features
 
 ### 🗺️ Live Threat Map
-- **Real-time threat signals** on an interactive SVG world map
-- **Geolocated C2 servers and attack sources** (ipwho.is, cached 7 days)
-- **KEV/CVE "global threat pressure" scatter** — a deliberate visualization that
-  vulnerability exposure is worldwide, not localized
-- **Severity-pulsed markers** tied to CVSS bands (Low → Critical)
-- **Clickable markers** with detail panels (CVSS, ASN, country, source links)
+- Real-time threat signals on an interactive SVG world map (zoom/pan)
+- Geolocated C2 servers and attack sources (ipwho.is, cached 7 days)
+- KEV/CVE "global threat pressure" scatter — vulnerability exposure is worldwide
+- Severity-pulsed markers tied to CVSS bands (Low → Critical)
+- Clickable markers with detail panels (CVSS, ASN, country, source links)
 - **3D globe view** with the same live signals
-- **Auto-refresh** loop with configurable interval
+- Auto-refresh loop with configurable interval
 
 ### 🛡️ Vulnerability Intelligence
-- **NVD CVE feed** — recent CVEs with CVSS v3.1 scores, vectors, vendors, and CWE IDs
-- **CISA KEV catalog** — Known Exploited Vulnerabilities with ransomware-campaign
-  flags, CISA required actions, and federal remediation due dates
-- **KEV ↔ CVE join** — every CVE row shows whether it is actively exploited
+- **NVD CVE feed** — recent CVEs with CVSS v3.1 scores, vectors, vendors, CWE IDs
+- **CISA KEV catalog** — known exploited vulnerabilities with ransomware-campaign
+  flags, required actions, and federal remediation due dates
+- **KEV ↔ CVE join** — every CVE row shows whether it's actively exploited
 - Filter by severity, vendor, or CVE id
 
 ### 📡 Threat Intel Feeds
@@ -42,41 +67,22 @@ and data breaches, wrapped in a cyberpunk SOC-style interface.**
 - **DShield/SANS** — top network attack sources with attack counts
 - **OpenPhish** — live phishing URL feed
 - **ISC threat level strip** — current internet storm condition
-- **Copy-as-IOC** — one click to copy any indicator
+- Copy-as-IOC — one click to copy any indicator
 
 ### 💥 Data Breaches
 - **HaveIBeenPwned catalog** — 1,000+ breaches with exposed-account counts
-- **Sensitive/verified badges** and data-class chips
+- Sensitive/verified badges and data-class chips
 - Filter by breach name, domain, sensitivity, or verification status
 
-### 📊 Trends & Analytics
-- Category distribution (KEV / Malicious IPs / Phishing / Breaches)
-- Severity distribution and CVSS score bands
-- 24-hour signal timeline
-
-### 🔔 Notifications & Export
-- **Toast notifications** for new high-severity signals (configurable threshold)
+### 📊 Trends, Alerts & Export
+- Category/severity distributions, CVSS bands, 24-hour signal timeline
+- Toast notifications for new high-severity signals (configurable threshold)
 - Optional audio alerts for critical events
-- **Export** to JSON/CSV, KEV catalog, IOC list, or a firewall-ready **IP blocklist**
+- Export to JSON/CSV, KEV catalog, IOC list, or a firewall-ready **IP blocklist**
 
----
+## 🚀 Quick start
 
-## 🎨 Design
-
-Cyberpunk/tech aesthetic carried over from the GeoAlert lineage:
-
-- 🌑 Dark theme with glassmorphism panels
-- 💜 Neon accents (cyan, purple, red, orange, pink)
-- ✨ Smooth animations and severity pulses
-- 📱 Responsive layout
-
----
-
-## 🚀 Installation
-
-### Prerequisites
-- Node.js 18+
-- npm
+**Prerequisites:** Node.js 18+, npm
 
 ```bash
 git clone https://github.com/Dev-Lahrani/Thor.git
@@ -85,170 +91,152 @@ npm install
 npm run dev
 ```
 
-The app will be available at `http://localhost:5173`.
+Open **http://localhost:5173** — that's it. 🎉
 
-### Build for Production
+### Production build
 
 ```bash
 npm run build
 npm run preview
 ```
 
----
-
 ## 📖 Usage
 
 ### Navigation
-- **Map** (`/`) — the main threat tracking dashboard
-- **Vulns** (`/vulnerabilities`) — CVE table + KEV cards
-- **Intel** (`/threat-intel`) — C2 / attacker / phishing IOC feeds
-- **Breaches** (`/breaches`) — HIBP breach catalog
 
-### Toolbar Controls
+| Route | Page |
+|---|---|
+| `/` | **Map** — the main live threat dashboard |
+| `/vulnerabilities` | **Vulns** — CVE table + KEV cards |
+| `/threat-intel` | **Intel** — C2 / attacker / phishing IOC feeds |
+| `/breaches` | **Breaches** — HIBP breach catalog |
+
+### Toolbar controls
+
 | Button | Function |
 |--------|----------|
-| ⏱ / ☰ | Toggle list vs timeline sidebar |
+| ⏱ / ☰ | Toggle list vs. timeline sidebar |
 | 🌍 | Open 3D globe view |
 | 📈 | Open threat trends dashboard |
 | 📊 | Toggle stats overlay |
-| 📤 | Export data |
+| 📤 | Export data (JSON / CSV / blocklist) |
 | ⚙️ | Settings (notifications, refresh interval) |
 
 ### Searching
-The search bar finds CVE ids, vendors, IPs, domains, and breaches. Selecting a CVE
-opens its NVD entry; selecting a breach opens its HIBP page.
 
----
+The search bar finds CVE ids, vendors, IPs, domains, and breaches. Selecting a
+CVE opens its NVD entry; a breach opens its HIBP page; an IOC jumps to its row
+on the Intel page. Share any selected signal with its `?event=` deep link.
 
-## 🔌 Data Sources
+## 🔌 Data sources
 
-This application uses **free, no-API-key-required** data sources:
+Thor runs entirely client-side on **free, no-API-key-required** feeds:
 
-| Source | Data | Update |
-|--------|------|--------|
-| [NIST NVD](https://nvd.nist.gov/) | CVE records (3-day window) | ~15 min cache |
-| [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | Actively exploited vulns (180-day window) | 30 min cache |
-| [abuse.ch Feodo Tracker](https://feodotracker.abuse.ch/) | Botnet C2 servers | 30 min cache |
-| [DShield/ISC](https://isc.sans.edu/) | Attack sources + threat level | 60 min cache |
-| [OpenPhish](https://openphish.com/) | Phishing URLs | 30 min cache |
-| [HaveIBeenPwned](https://haveibeenpwned.com/) | Public breach catalog | 6 h cache |
-| [ipwho.is](https://ipwho.is/) | IOC geolocation | 7-day localStorage cache |
+| Source | Data | Cache |
+|--------|------|-------|
+| [NIST NVD](https://nvd.nist.gov/) | CVE records (3-day window) | 15 min |
+| [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | Actively exploited vulns (180-day window) | 30 min |
+| [abuse.ch Feodo Tracker](https://feodotracker.abuse.ch/) | Botnet C2 servers | 30 min |
+| [DShield/ISC](https://isc.sans.edu/) | Attack sources + threat level | 60 min |
+| [OpenPhish](https://openphish.com/) | Phishing URLs | 30 min |
+| [HaveIBeenPwned](https://haveibeenpwned.com/) | Public breach catalog | 6 h |
+| [ipwho.is](https://ipwho.is/) | IOC geolocation | 7-day localStorage |
 
-Feeds without CORS headers (CISA KEV, Feodo) are fetched through a public read relay
-with direct-fetch fallback. All data is consumed **client-side** — no backend, no keys,
-nothing to leak.
+Feeds without CORS headers (CISA KEV, Feodo) are fetched through a public read
+relay with a direct-fetch fallback, and a per-feed status banner tells you when
+something is degraded. No data ever leaves your browser.
 
----
+> ℹ️ KEV and recent-CVE map markers use deterministic hash-scatter positions
+> (marked with dashed strokes and an "approx" badge) — vulnerabilities have no
+> physical location, so these visualize *global pressure* rather than geography.
 
-## 🏗️ Project Structure
+## 🏗️ Project structure
 
 ```
 src/
-├── components/
-│   ├── ThreatMap.tsx         # SVG world map with threat markers
-│   ├── Header.tsx            # Brand + nav + category filters + stats
-│   ├── Sidebar.tsx           # Threat list + detail panel
-│   ├── StatsOverlay.tsx      # Threat statistics overlay
-│   ├── SearchBar.tsx         # CVE / vendor / IP / domain search
-│   ├── NotificationToast.tsx # Severity-based alert notifications
-│   ├── TimelineView.tsx      # Chronological signal timeline
-│   ├── ExportModal.tsx       # JSON/CSV/blocklist export
-│   ├── SettingsModal.tsx     # Notifications + refresh settings
-│   ├── ThreatTrends.tsx      # Charts and analytics
-│   ├── Globe3D.tsx           # Three.js 3D threat globe
-│   ├── LoadingScreen.tsx     # Boot animation
-│   ├── Footer.tsx            # Data source credits
-│   └── index.ts              # Component exports
+├── components/        # ThreatMap, Sidebar, ExportModal, Globe3D, charts…
 ├── context/
-│   └── ThreatContext.tsx     # Shared state: feeds, filters, notifications
-├── pages/
-│   ├── Layout.tsx            # Persistent shell (header/footer/modals)
-│   ├── MapView.tsx           # Main map dashboard
-│   ├── VulnerabilitiesPage.tsx
-│   ├── ThreatIntelPage.tsx
-│   ├── DataBreachPage.tsx
-│   └── index.ts
+│   └── ThreatContext.tsx   # Shared state: feeds, filters, notifications
+├── pages/             # Layout, MapView, Vulnerabilities, Intel, Breaches
 ├── services/
-│   └── api.ts                # Feed layer: NVD, KEV, Feodo, DShield, OpenPhish, HIBP
-├── types/
-│   └── index.ts              # TypeScript types
-├── utils/
-│   ├── helpers.ts            # Category/severity styling + formatters
-│   └── audio.ts              # Notification chime
-├── main.tsx                  # Routes + provider
-└── index.css                 # Global styles (Tailwind v4)
+│   └── api.ts         # Feed layer: NVD, KEV, Feodo, DShield, OpenPhish, HIBP
+├── types/             # TypeScript types
+├── utils/             # helpers, csv export, audio
+└── main.tsx           # Routes + provider
 ```
 
----
+Deeper dives live in [`docs/`](docs/): [architecture](docs/architecture.md),
+[API reference](docs/api-reference.md), [components](docs/components.md),
+[customization](docs/customization.md), and
+[troubleshooting](docs/troubleshooting.md).
 
-## 🛠️ Tech Stack
+## 🛠️ Tech stack
 
 | Technology | Purpose |
 |------------|---------|
-| **React 19** | UI Framework |
-| **TypeScript** | Type Safety |
-| **Vite (Rolldown)** | Build Tool |
+| **React 19** | UI framework |
+| **TypeScript** (strict) | Type safety |
+| **Vite (Rolldown)** | Build tool |
 | **Tailwind CSS v4** | Styling |
-| **Three.js** | 3D Globe |
-| **@react-three/fiber** | React Three.js bindings |
+| **Three.js** + @react-three/fiber | 3D globe |
 | **Recharts** | Data visualization |
-| **Lucide React** | Icons |
+| **Vitest** | Unit testing |
 | **React Router** | Navigation |
 
----
+## 🧪 Development
 
-## ⚙️ Configuration
-
-No API keys required — every feed is public and consumed client-side.
-
-Theme tokens live in `src/index.css`:
-
-```css
---neon-cyan: #00d4ff
---neon-purple: #a855f7
---neon-red: #ef4444
---neon-orange: #f97316
---neon-pink: #ec4899
+```bash
+npm run dev         # start dev server
+npm run lint        # ESLint
+npm test            # Vitest unit tests
+npm run test:watch  # tests in watch mode
+npm run build       # typecheck + production build
 ```
 
----
+CI runs lint + tests + build on every push and PR.
 
 ## 🤝 Contributing
 
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
-4. **Push** to the branch (`git push origin feature/amazing-feature`)
-5. **Open** a Pull Request
+Contributions are **welcome and celebrated** — code, docs, design, ideas, bug
+reports. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started, check
+[good first issues](https://github.com/Dev-Lahrani/Thor/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22),
+and browse the [ROADMAP](ROADMAP.md) to see where the project is heading.
 
----
+Please read our [Code of Conduct](CODE_OF_CONDUCT.md) and
+[security policy](SECURITY.md) before participating.
+
+<a href="https://github.com/Dev-Lahrani/Thor/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Dev-Lahrani/Thor" alt="Contributors" />
+</a>
+
+## ⭐ Support the project
+
+If Thor is useful to you, a **star** helps others discover it:
+
+<div align="center">
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Dev-Lahrani/Thor&type=Date)](https://star-history.com/#Dev-Lahrani/Thor&Date)
+
+</div>
 
 ## 📄 License
 
-MIT License — see [LICENSE](LICENSE).
-
----
+[MIT](LICENSE) — free to use, modify, and self-host. © Dev Lahrani
 
 ## 🙏 Acknowledgments
 
-- **CISA** for the Known Exploited Vulnerabilities catalog
-- **NIST** for the National Vulnerability Database
-- **abuse.ch**, **DShield/ISC**, and **OpenPhish** for IOC feeds
-- **HaveIBeenPwned** for the breach catalog
-- **Three.js** community for 3D visualization tools
-
----
-
-## 📬 Contact
-
-**Dev Lahrani** - [@Dev-Lahrani](https://github.com/Dev-Lahrani)
-
-Project Link: [https://github.com/Dev-Lahrani/Thor](https://github.com/Dev-Lahrani/Thor)
+- **CISA** — Known Exploited Vulnerabilities catalog
+- **NIST** — National Vulnerability Database
+- **abuse.ch**, **DShield/ISC**, **OpenPhish** — IOC feeds
+- **HaveIBeenPwned** — breach catalog
+- **Three.js & Recharts** communities — visualization tooling
 
 ---
 
 <div align="center">
 
-**⚡ Cyber Threat Intelligence, live and key-free. ⚡**
+**⚡ Cyber threat intelligence, live and key-free. ⚡**
+
+Made with ⚡ by [Dev Lahrani](https://github.com/Dev-Lahrani)
 
 </div>

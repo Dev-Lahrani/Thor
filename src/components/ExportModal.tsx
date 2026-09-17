@@ -1,6 +1,7 @@
 import React from 'react';
 import { Download, Share2, X, FileJson, FileSpreadsheet, Link2, Copy, Check } from 'lucide-react';
 import type { ThreatEvent, CveRecord, KevEntry, IocIndicator, BreachRecord } from '../types';
+import { buildCsv } from '../utils/csv';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -41,8 +42,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   };
 
   const exportToCSV = (rows: (string | number)[][], headers: string[], filename: string) => {
-    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
-    downloadBlob(new Blob([csv], { type: 'text/csv' }), filename);
+    downloadBlob(new Blob([buildCsv(headers, rows)], { type: 'text/csv' }), filename);
   };
 
   const exportEventsCsv = () => {

@@ -168,6 +168,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="font-mono">
               {selectedEvent.coordinates[1].toFixed(4)}°, {selectedEvent.coordinates[0].toFixed(4)}°
             </span>
+            {selectedEvent.approxLocation && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500 border border-white/10 uppercase tracking-wide">
+                approx — no geo data
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2 text-gray-400">
             <Clock className="w-4 h-4" />

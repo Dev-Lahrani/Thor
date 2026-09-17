@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Hammer,
@@ -49,7 +49,15 @@ export const Header: React.FC<HeaderProps> = ({
   kevCount,
 }) => {
   const location = useLocation();
-  const categories = CATEGORY_ORDER;
+  // Only show filter toggles for categories that actually appear in the data —
+  // phishing/breach entries are never emitted as map events, so toggles for
+  // them would do nothing.
+  const presentCategories = useMemo(() => {
+    const set = new Set<ThreatCategory>();
+    events.forEach(e => set.add(e.category));
+    return set;
+  }, [events]);
+  const categories = CATEGORY_ORDER.filter(cat => presentCategories.has(cat));
 
   // Statistics
   const totalEvents = events.length;

@@ -4,7 +4,6 @@ export { Sidebar } from './Sidebar';
 export { Footer } from './Footer';
 export { LoadingScreen } from './LoadingScreen';
 export { NotificationToast } from './NotificationToast';
-export type { ThreatNotification } from './NotificationToast';
 export { SearchBar } from './SearchBar';
 export { TimelineView } from './TimelineView';
 export { SettingsModal } from './SettingsModal';
