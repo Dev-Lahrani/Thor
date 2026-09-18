@@ -259,3 +259,5 @@ export const Globe3D: React.FC<Globe3DProps> = ({
     </div>
   );
 };
+
+export default Globe3D;

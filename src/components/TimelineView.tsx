@@ -36,7 +36,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   // Filter disasters by time
-  const now = Date.now();
+  const [now] = useState(() => Date.now());
   const filteredDisasters = disasters
     .filter(d => {
       const eventTime = new Date(d.date).getTime();
@@ -195,3 +195,5 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     </div>
   );
 };
+
+export default React.memo(TimelineView);

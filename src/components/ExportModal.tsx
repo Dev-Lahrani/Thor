@@ -21,7 +21,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   if (!isOpen) return null;
 
-  const exportToJSON = (data: any, filename: string) => {
+  const exportToJSON = (data: DisasterEvent[] | WeatherData[] | Record<string, unknown>, filename: string) => {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -215,3 +215,5 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     </>
   );
 };
+
+export default React.memo(ExportModal);

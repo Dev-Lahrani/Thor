@@ -365,3 +365,5 @@ export const WeatherCompare: React.FC<WeatherCompareProps> = ({
     </div>
   );
 };
+
+export default WeatherCompare;

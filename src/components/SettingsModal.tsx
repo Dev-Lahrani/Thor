@@ -166,7 +166,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span className="text-sm text-white mb-2 block">Minimum Severity</span>
                 <select
                   value={settings.minSeverityNotification}
-                  onChange={(e) => onUpdateSettings({ minSeverityNotification: e.target.value as any })}
+                  onChange={(e) => onUpdateSettings({ minSeverityNotification: e.target.value as UserSettings['minSeverityNotification'] })}
                   className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-neon-cyan/30 transition-all duration-300"
                 >
                   {severityOptions.map(({ value, label }) => (

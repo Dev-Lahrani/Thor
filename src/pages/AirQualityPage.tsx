@@ -576,3 +576,5 @@ export const AirQualityPage: React.FC = () => {
     </div>
   );
 };
+
+export default AirQualityPage;

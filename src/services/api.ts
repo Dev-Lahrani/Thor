@@ -4,11 +4,64 @@ import type {
   EONETResponse, 
   EONETEvent,
   WeatherData,
-  OpenMeteoResponse,
   City,
   SeverityLevel,
   AlertLevel
 } from '../types';
+
+// --- SWR localStorage cache + AbortController helpers ---
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+function readCache<T>(key: string, ttlMs: number): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const entry: CacheEntry<T> = JSON.parse(raw);
+    if (Date.now() - entry.timestamp > ttlMs) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return entry.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache<T>(key: string, data: T): void {
+  try {
+    const entry: CacheEntry<T> = { data, timestamp: Date.now() };
+    localStorage.setItem(key, JSON.stringify(entry));
+  } catch {
+    // quota exceeded or private browsing — silently ignore
+  }
+}
+
+async function cachedFetch<T>(
+  url: string,
+  opts: { cacheKey: string; ttlMs: number; signal?: AbortSignal },
+): Promise<T> {
+  const response = await fetch(url, { signal: opts.signal });
+  if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+  const data: T = await response.json();
+  writeCache(opts.cacheKey, data);
+  return data;
+}
+
+function cachedFetchWithFallback<T>(
+  url: string,
+  opts: { cacheKey: string; ttlMs: number; signal?: AbortSignal },
+): Promise<T> {
+  return cachedFetch<T>(url, opts).catch((err) => {
+    if (err instanceof DOMException && err.name === 'AbortError') throw err;
+    const cached = readCache<T>(opts.cacheKey, opts.ttlMs * 5);
+    if (cached) return cached;
+    throw err;
+  });
+}
 
 // NASA EONET API - Real-time natural events
 const EONET_API_URL = 'https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=100';
@@ -216,85 +269,71 @@ function transformUSGSEarthquake(feature: USGSFeature): DisasterEvent {
   };
 }
 
-async function fetchUSGSEarthquakes(): Promise<DisasterEvent[]> {
+async function fetchUSGSEarthquakes(signal?: AbortSignal): Promise<DisasterEvent[]> {
   try {
-    // Fetch from all three feeds for most comprehensive real-time data
-    const [hourResponse, dayResponse, significantResponse] = await Promise.all([
-      fetch(USGS_HOUR_URL),  // Most recent - updated every minute
-      fetch(USGS_DAY_URL),   // Past 24 hours
-      fetch(USGS_SIGNIFICANT_URL), // Significant events
+    const [hourData, dayData, significantData] = await Promise.all([
+      cachedFetchWithFallback<USGSResponse>(USGS_HOUR_URL, {
+        cacheKey: 'usgs-hour', ttlMs: 60_000, signal,
+      }),
+      cachedFetchWithFallback<USGSResponse>(USGS_DAY_URL, {
+        cacheKey: 'usgs-day', ttlMs: 300_000, signal,
+      }),
+      cachedFetchWithFallback<USGSResponse>(USGS_SIGNIFICANT_URL, {
+        cacheKey: 'usgs-significant', ttlMs: 300_000, signal,
+      }),
     ]);
-    
+
     const events: DisasterEvent[] = [];
     const seenIds = new Set<string>();
-    
-    // Process hour feed first (most recent)
-    if (hourResponse.ok) {
-      const hourData: USGSResponse = await hourResponse.json();
-      console.log(`[USGS] ${hourData.features.length} earthquakes in past hour`);
-      for (const feature of hourData.features) {
-        if (!seenIds.has(feature.id)) {
-          seenIds.add(feature.id);
-          events.push(transformUSGSEarthquake(feature));
-        }
+
+    for (const feature of hourData.features) {
+      if (!seenIds.has(feature.id)) {
+        seenIds.add(feature.id);
+        events.push(transformUSGSEarthquake(feature));
       }
     }
-    
-    // Process day feed
-    if (dayResponse.ok) {
-      const dayData: USGSResponse = await dayResponse.json();
-      for (const feature of dayData.features) {
-        if (!seenIds.has(feature.id)) {
-          seenIds.add(feature.id);
-          events.push(transformUSGSEarthquake(feature));
-        }
+    for (const feature of dayData.features) {
+      if (!seenIds.has(feature.id)) {
+        seenIds.add(feature.id);
+        events.push(transformUSGSEarthquake(feature));
       }
     }
-    
-    // Process significant feed
-    if (significantResponse.ok) {
-      const significantData: USGSResponse = await significantResponse.json();
-      for (const feature of significantData.features) {
-        if (!seenIds.has(feature.id)) {
-          seenIds.add(feature.id);
-          events.push(transformUSGSEarthquake(feature));
-        }
+    for (const feature of significantData.features) {
+      if (!seenIds.has(feature.id)) {
+        seenIds.add(feature.id);
+        events.push(transformUSGSEarthquake(feature));
       }
     }
-    
+
     return events;
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
     console.error('Failed to fetch USGS earthquakes:', error);
     return [];
   }
 }
 
-async function fetchEONETEvents(): Promise<DisasterEvent[]> {
+async function fetchEONETEvents(signal?: AbortSignal): Promise<DisasterEvent[]> {
   try {
-    const response = await fetch(EONET_API_URL);
-    if (!response.ok) {
-      throw new Error(`EONET API error: ${response.status}`);
-    }
-    
-    const data: EONETResponse = await response.json();
-    
-    const events = data.events
+    const data = await cachedFetchWithFallback<EONETResponse>(EONET_API_URL, {
+      cacheKey: 'eonet', ttlMs: 300_000, signal,
+    });
+
+    return data.events
       .map(transformEONETEvent)
       .filter((event): event is DisasterEvent => event !== null);
-    
-    return events;
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
     console.error('Failed to fetch EONET events:', error);
     return [];
   }
 }
 
-export async function fetchDisasterEvents(): Promise<DisasterEvent[]> {
+export async function fetchDisasterEvents(signal?: AbortSignal): Promise<DisasterEvent[]> {
   try {
-    // Fetch from multiple sources in parallel
     const [eonetEvents, usgsEarthquakes] = await Promise.all([
-      fetchEONETEvents(),
-      fetchUSGSEarthquakes(),
+      fetchEONETEvents(signal),
+      fetchUSGSEarthquakes(signal),
     ]);
     
     // Combine and deduplicate events
@@ -389,17 +428,15 @@ const weatherCodeDescriptions: Record<number, string> = {
   99: 'Thunderstorm with heavy hail',
 };
 
-async function fetchCityWeather(city: City): Promise<WeatherData | null> {
+async function fetchCityWeather(city: City, signal?: AbortSignal): Promise<WeatherData | null> {
   try {
-    // Comprehensive weather data request
     const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m,is_day,precipitation,cloud_cover,pressure_msl,surface_pressure,dew_point_2m&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max&timezone=auto`;
     
-    // Air quality data request
     const airQualityUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${city.lat}&longitude=${city.lon}&current=us_aqi,pm10,pm2_5`;
     
     const [weatherResponse, airQualityResponse] = await Promise.all([
-      fetch(weatherUrl),
-      fetch(airQualityUrl).catch(() => null), // Air quality may fail
+      fetch(weatherUrl, { signal }),
+      fetch(airQualityUrl, { signal }).catch(() => null),
     ]);
     
     if (!weatherResponse.ok) return null;
@@ -460,12 +497,13 @@ async function fetchCityWeather(city: City): Promise<WeatherData | null> {
   }
 }
 
-export async function fetchWeatherData(): Promise<WeatherData[]> {
+export async function fetchWeatherData(signal?: AbortSignal): Promise<WeatherData[]> {
   try {
-    const weatherPromises = MAJOR_CITIES.map(city => fetchCityWeather(city));
+    const weatherPromises = MAJOR_CITIES.map(city => fetchCityWeather(city, signal));
     const results = await Promise.all(weatherPromises);
     return results.filter((w): w is WeatherData => w !== null);
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
     console.error('Failed to fetch weather data:', error);
     throw error;
   }

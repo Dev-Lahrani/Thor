@@ -13,7 +13,6 @@ export type { UserSettings } from './SettingsModal';
 export { ExportModal } from './ExportModal';
 export { StatsOverlay } from './StatsOverlay';
 export { Watchlist } from './Watchlist';
-export { WeatherCompare } from './WeatherCompare';
 export { DisasterTrends } from './DisasterTrends';
 export { AnimatedWeatherIcon } from './AnimatedWeatherIcon';
-export { Globe3D } from './Globe3D';
+export { CTIProvider } from './CTIProvider';

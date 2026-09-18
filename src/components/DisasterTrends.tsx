@@ -37,8 +37,6 @@ export const DisasterTrends: React.FC<DisasterTrendsProps> = ({
   isOpen,
   onClose,
 }) => {
-  if (!isOpen) return null;
-
   // Process data for charts
   const categoryData = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -134,6 +132,8 @@ export const DisasterTrends: React.FC<DisasterTrendsProps> = ({
     return earthquakes.reduce((sum, eq) => sum + (eq.magnitude || 0), 0) / earthquakes.length;
   }, [disasters]);
   const totalAffected = disasters.reduce((sum, d) => sum + (d.estimatedAffected || 0), 0);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
@@ -344,3 +344,5 @@ export const DisasterTrends: React.FC<DisasterTrendsProps> = ({
     </div>
   );
 };
+
+export default React.memo(DisasterTrends);

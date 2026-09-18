@@ -724,3 +724,5 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </aside>
   );
 };
+
+export default React.memo(Sidebar);

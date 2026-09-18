@@ -55,7 +55,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
       if (response.ok) {
         const data = await response.json();
         if (data.results) {
-          setGeocodingResults(data.results.map((r: any) => ({
+          setGeocodingResults(data.results.map((r: { name: string; country?: string; latitude: number; longitude: number }) => ({
             name: r.name,
             country: r.country || '',
             lat: r.latitude,
@@ -220,3 +220,5 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     </div>
   );
 };
+
+export default React.memo(SearchBar);

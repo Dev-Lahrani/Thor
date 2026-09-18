@@ -725,3 +725,5 @@ export const WeatherPage: React.FC = () => {
     </div>
   );
 };
+
+export default WeatherPage;

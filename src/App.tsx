@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  Header, 
-  RealWorldMap, 
-  Sidebar, 
-  Footer, 
+import { useState, useCallback, lazy, Suspense } from 'react';
+import {
+  Header,
+  RealWorldMap,
+  Sidebar,
+  Footer,
   LoadingScreen,
   NotificationToast,
   SearchBar,
@@ -12,168 +12,93 @@ import {
   ExportModal,
   StatsOverlay,
   Watchlist,
-  WeatherCompare,
   DisasterTrends,
-  Globe3D,
 } from './components';
-import type { UserSettings } from './components';
-import { fetchDisasterEvents, fetchWeatherData } from './services/api';
-import type { DisasterEvent, WeatherData, FilterState, DisasterCategory, SeverityLevel } from './types';
-import { AlertTriangle, Settings, Download, BarChart3, Clock, List, GitCompare, TrendingUp, Globe } from 'lucide-react';
+import type { DisasterEvent, WeatherData } from './types';
+import { useSettings } from './hooks/useSettings';
+import { useNotifications } from './hooks/useNotifications';
+import { useFilteredDisasters } from './hooks/useFilteredDisasters';
+import { useUIState } from './hooks/useUIState';
+import { usePersona } from './hooks/usePersona';
+import {
+  AlertTriangle,
+  Settings,
+  Download,
+  BarChart3,
+  Clock,
+  List,
+  GitCompare,
+  TrendingUp,
+  Globe,
+  Shield,
+  Map,
+  Swords,
+  Users,
+} from 'lucide-react';
+import { PersonaSelector } from './components/PersonaSelector';
 
-interface Notification {
-  id: string;
-  event: DisasterEvent;
-  timestamp: Date;
-  read: boolean;
-}
-
-const DEFAULT_SETTINGS: UserSettings = {
-  theme: 'dark',
-  temperatureUnit: 'celsius',
-  notificationsEnabled: true,
-  soundEnabled: false,
-  autoRefresh: true,
-  refreshInterval: 30,
-  minSeverityNotification: 'moderate',
-};
-
-const severityOrder: SeverityLevel[] = ['minor', 'moderate', 'severe', 'extreme', 'catastrophic'];
+const WeatherCompare = lazy(() => import('./components/WeatherCompare'));
+const Globe3D = lazy(() => import('./components/Globe3D'));
+const IoCFeedPanel = lazy(() => import('./components/IoCFeedPanel').then(m => ({ default: m.IoCFeedPanel })));
+const ThreatMap = lazy(() => import('./components/ThreatMap').then(m => ({ default: m.ThreatMap })));
+const CampaignPanel = lazy(() => import('./components/CampaignPanel').then(m => ({ default: m.CampaignPanel })));
+const ActorPanel = lazy(() => import('./components/ActorPanel').then(m => ({ default: m.ActorPanel })));
 
 function App() {
-  const [disasters, setDisasters] = useState<DisasterEvent[]>([]);
-  const [weather, setWeather] = useState<WeatherData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<DisasterEvent | WeatherData | null>(null);
-  const [filters, setFilters] = useState<FilterState>({
-    earthquakes: true,
-    floods: true,
-    wildfires: true,
-    severeStorms: true,
-    volcanoes: true,
-    weather: true,
+  const { settings, updateSettings } = useSettings();
+  const { notifications, initAudio, detectNewEvents, dismiss, dismissAll, markAsRead } =
+    useNotifications();
+  const { personaId, config: persona, setPersona } = usePersona();
+
+  const handleNewEvents = useCallback(
+    (disasterData: DisasterEvent[], previousIds: Set<string>) => {
+      detectNewEvents(disasterData, previousIds, {
+        enabled: settings.notificationsEnabled,
+        minSeverity: settings.minSeverityNotification,
+        soundEnabled: settings.soundEnabled,
+      });
+    },
+    [detectNewEvents, settings.notificationsEnabled, settings.minSeverityNotification, settings.soundEnabled],
+  );
+
+  useState(() => {
+    const handler = () => { initAudio(); window.removeEventListener('click', handler); };
+    window.addEventListener('click', handler);
   });
-  
-  // New state for features
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isExportOpen, setIsExportOpen] = useState(false);
-  const [showStats, setShowStats] = useState(false);
-  const [sidebarView, setSidebarView] = useState<'list' | 'timeline'>('list');
-  const [mapFocusCoords, setMapFocusCoords] = useState<[number, number] | null>(null);
-  const [showWeatherCompare, setShowWeatherCompare] = useState(false);
-  const [showTrends, setShowTrends] = useState(false);
-  const [showGlobe, setShowGlobe] = useState(false);
-  
-  const previousDisasterIds = useRef<Set<string>>(new Set());
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Initialize audio for notifications
-  useEffect(() => {
-    audioRef.current = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Onq+wtLCpm4h2Z2RnaHF9i5efo6Ggm5GOiIWFh4uRl5yanpmWkIyKiImKjZGVmJqamZaTkI2LiouMj5KVl5mYl5WSkI2Li4uMjpGUlpiYl5WTkI6Mi4uMjpCTlZeXlpSTkI6Mi4uLjI6Qk5WXl5aVk5CQjo6Ojo6Oj5GTlJWWlpWUk5GQj46Ojo6PkJGTlJWVlJSTkpGQj4+Pj5CRkpOUlJSUk5KRkJCQkJCQkZKSk5SUlJSTkpKRkZGRkZGRkpKTk5OTk5KSkpGRkZGRkpKSk5OTk5OSk5KSkZGRkZGSkpKTk5OTk5KSkpKRkZGRkpKSk5OTk5OTkpKSkpGRkZKSkpKTk5OTk5KSkpKSkZGSkpKSk5OTk5OSkpKSkpKSkpKSkpOTk5OTkpKSkpKSkpKSkpKTk5OTk5KSkpKSkpKSkpKTk5OTk5OSkpKSkpKSkpKTk5OTk5OTkpKSkpKSkpKTk5OTk5OTk5KSkpKSkpOTk5OTk5OTkpKSkpKSk5OTk5OTk5OTkpKSkpKTk5OTk5OTk5OSkpKSkpOTk5OTk5OTk5KSkpKTk5OTk5OTk5OTkpKSkpOTk5OTk5OTk5OSkpKTk5OTk5OTk5OTk5KSk5OTk5OTk5OTk5OTkpOTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OQ==');
-  }, []);
+  const {
+    disasters, weather, loading, error, lastUpdated, fetchData,
+    filters, handleFilterChange, filteredDisasters,
+  } = useFilteredDisasters({
+    autoRefresh: settings.autoRefresh,
+    refreshInterval: settings.refreshInterval,
+    onNewEvents: handleNewEvents,
+  });
 
-  const fetchData = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const [disasterData, weatherData] = await Promise.all([
-        fetchDisasterEvents(),
-        fetchWeatherData(),
-      ]);
-      
-      // Check for new events for notifications
-      if (settings.notificationsEnabled && previousDisasterIds.current.size > 0) {
-        const newEvents = disasterData.filter(d => !previousDisasterIds.current.has(d.id));
-        const minSeverityIndex = severityOrder.indexOf(settings.minSeverityNotification);
-        
-        const significantNewEvents = newEvents.filter(event => {
-          const eventSeverityIndex = severityOrder.indexOf(event.severity || 'minor');
-          return eventSeverityIndex >= minSeverityIndex;
-        });
+  const {
+    viewMode, setViewMode, ctiSubView, setCtiSubView,
+    sidebarView, setSidebarView,
+    isSettingsOpen, setIsSettingsOpen,
+    isExportOpen, setIsExportOpen,
+    showStats, toggleStats,
+    showWeatherCompare, setShowWeatherCompare,
+    showTrends, setShowTrends,
+    showGlobe, setShowGlobe,
+  } = useUIState();
 
-        if (significantNewEvents.length > 0) {
-          const newNotifications: Notification[] = significantNewEvents.map(event => ({
-            id: `notif-${event.id}-${Date.now()}`,
-            event,
-            timestamp: new Date(),
-            read: false,
-          }));
-          
-          setNotifications(prev => [...newNotifications, ...prev].slice(0, 50));
-          
-          // Play sound if enabled
-          if (settings.soundEnabled && audioRef.current) {
-            audioRef.current.play().catch(() => {});
-          }
-        }
-      }
-      
-      // Update previous IDs
-      previousDisasterIds.current = new Set(disasterData.map(d => d.id));
-      
-      setDisasters(disasterData);
-      setWeather(weatherData);
-      setLastUpdated(new Date());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch data');
-    } finally {
-      setLoading(false);
-    }
-  }, [settings.notificationsEnabled, settings.minSeverityNotification, settings.soundEnabled]);
+  const [selectedEvent, setSelectedEvent] = useState<DisasterEvent | WeatherData | null>(null);
 
-  useEffect(() => {
-    fetchData();
-    
-    if (settings.autoRefresh) {
-      const interval = setInterval(fetchData, settings.refreshInterval * 1000);
-      return () => clearInterval(interval);
-    }
-  }, [fetchData, settings.autoRefresh, settings.refreshInterval]);
-
-  const handleFilterChange = (category: DisasterCategory) => {
-    setFilters(prev => ({
-      ...prev,
-      [category]: !prev[category],
-    }));
-  };
-
-  const handleSelectEvent = (event: DisasterEvent | WeatherData | null) => {
+  const handleSelectEvent = useCallback((event: DisasterEvent | WeatherData | null) => {
     setSelectedEvent(event);
-    // Mark notification as read if selecting from notification
     if (event && 'id' in event) {
-      setNotifications(prev => 
-        prev.map(n => n.event.id === event.id ? { ...n, read: true } : n)
-      );
+      markAsRead(event.id);
     }
+  }, [markAsRead]);
+
+  const handleFocusLocation = (_coords: [number, number]) => {
+    // TODO: wire mapFocusCoords to RealWorldMap once focus is implemented
   };
 
-  const handleDismissNotification = (id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  };
-
-  const handleDismissAllNotifications = () => {
-    setNotifications([]);
-  };
-
-  const handleUpdateSettings = (newSettings: Partial<UserSettings>) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
-  };
-
-  const handleFocusLocation = (coords: [number, number]) => {
-    setMapFocusCoords(coords);
-    // Reset after a short delay
-    setTimeout(() => setMapFocusCoords(null), 100);
-  };
-
-  // Filter disasters based on active filters
-  const filteredDisasters = disasters.filter(d => filters[d.category]);
-  
-  // Show initial loading screen
   if (loading && disasters.length === 0) {
     return <LoadingScreen message="Connecting to global monitoring systems..." />;
   }
@@ -193,8 +118,27 @@ function App() {
 
       {/* Toolbar below header */}
       <div className="px-4 py-2 border-b border-white/10 flex items-center justify-between gap-4 bg-cyber-darker">
-        <div className="flex items-center gap-2">
-          {/* Search */}
+        <div className="flex items-center gap-3">
+          {/* Persona Selector */}
+          <PersonaSelector currentPersona={personaId} onSelect={setPersona} />
+
+          {/* View Mode Tabs */}
+          <div className="flex items-center bg-white/5 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('dashboard')}
+              className={`px-3 py-1.5 text-xs rounded transition-colors ${viewMode === 'dashboard' ? 'bg-white/10 text-neon-cyan' : 'text-gray-400 hover:text-white'}`}
+            >
+              <Globe className="w-3.5 h-3.5 inline mr-1.5" />
+              Dashboard
+            </button>
+            <button
+              onClick={() => setViewMode('cti')}
+              className={`px-3 py-1.5 text-xs rounded transition-colors ${viewMode === 'cti' ? 'bg-neon-cyan/20 text-neon-cyan' : 'text-gray-400 hover:text-white'}`}
+            >
+              <Shield className="w-3.5 h-3.5 inline mr-1.5" />
+              IoC Feeds
+            </button>
+          </div>
           <SearchBar
             disasters={filteredDisasters}
             weather={weather}
@@ -202,7 +146,7 @@ function App() {
             onFocusLocation={handleFocusLocation}
           />
         </div>
-        
+
         <div className="flex items-center gap-2">
           {/* View toggles */}
           <div className="flex items-center bg-white/5 rounded-lg p-1">
@@ -222,7 +166,6 @@ function App() {
             </button>
           </div>
 
-          {/* 3D Globe */}
           <button
             onClick={() => setShowGlobe(true)}
             className="p-2 rounded-lg bg-white/5 text-gray-400 hover:text-neon-cyan hover:bg-white/10 transition-colors"
@@ -231,7 +174,6 @@ function App() {
             <Globe className="w-4 h-4" />
           </button>
 
-          {/* Trends */}
           <button
             onClick={() => setShowTrends(true)}
             className="p-2 rounded-lg bg-white/5 text-gray-400 hover:text-neon-purple hover:bg-white/10 transition-colors"
@@ -240,25 +182,24 @@ function App() {
             <TrendingUp className="w-4 h-4" />
           </button>
 
-          {/* Weather Compare */}
-          <button
-            onClick={() => setShowWeatherCompare(true)}
-            className="p-2 rounded-lg bg-white/5 text-gray-400 hover:text-neon-orange hover:bg-white/10 transition-colors"
-            title="Compare Weather"
-          >
-            <GitCompare className="w-4 h-4" />
-          </button>
+          {persona.showWeatherPanels && (
+            <button
+              onClick={() => setShowWeatherCompare(true)}
+              className="p-2 rounded-lg bg-white/5 text-gray-400 hover:text-neon-orange hover:bg-white/10 transition-colors"
+              title="Compare Weather"
+            >
+              <GitCompare className="w-4 h-4" />
+            </button>
+          )}
 
-          {/* Stats toggle */}
           <button
-            onClick={() => setShowStats(!showStats)}
+            onClick={toggleStats}
             className={`p-2 rounded-lg transition-colors ${showStats ? 'bg-neon-purple/20 text-neon-purple' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'}`}
             title="Toggle Statistics"
           >
             <BarChart3 className="w-4 h-4" />
           </button>
 
-          {/* Export */}
           <button
             onClick={() => setIsExportOpen(true)}
             className="p-2 rounded-lg bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
@@ -267,7 +208,6 @@ function App() {
             <Download className="w-4 h-4" />
           </button>
 
-          {/* Settings */}
           <button
             onClick={() => setIsSettingsOpen(true)}
             className="p-2 rounded-lg bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
@@ -279,6 +219,78 @@ function App() {
       </div>
 
       {/* Main Content */}
+      {viewMode === 'cti' ? (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* CTI sub-tabs */}
+          <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2 bg-cyber-darker">
+            <button
+              onClick={() => setCtiSubView('feeds')}
+              className={`px-3 py-1.5 text-xs rounded transition-colors ${ctiSubView === 'feeds' ? 'bg-neon-cyan/20 text-neon-cyan' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+            >
+              <Shield className="w-3.5 h-3.5 inline mr-1.5" />
+              IoC Feeds
+            </button>
+            <button
+              onClick={() => setCtiSubView('map')}
+              className={`px-3 py-1.5 text-xs rounded transition-colors ${ctiSubView === 'map' ? 'bg-neon-cyan/20 text-neon-cyan' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+            >
+              <Map className="w-3.5 h-3.5 inline mr-1.5" />
+              Threat Map
+            </button>
+            {persona.showCampaignPanel && (
+              <button
+                onClick={() => setCtiSubView('campaigns')}
+                className={`px-3 py-1.5 text-xs rounded transition-colors ${ctiSubView === 'campaigns' ? 'bg-neon-purple/20 text-neon-purple' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+              >
+                <Swords className="w-3.5 h-3.5 inline mr-1.5" />
+                Campaigns
+              </button>
+            )}
+            {persona.showActorPanel && (
+              <button
+                onClick={() => setCtiSubView('actors')}
+                className={`px-3 py-1.5 text-xs rounded transition-colors ${ctiSubView === 'actors' ? 'bg-neon-orange/20 text-neon-orange' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+              >
+                <Users className="w-3.5 h-3.5 inline mr-1.5" />
+                Actors
+              </button>
+            )}
+          </div>
+
+          {/* CTI content */}
+          <div className="flex-1 flex overflow-hidden">
+            {ctiSubView === 'feeds' && (
+              <Suspense fallback={<LoadingScreen message="Loading IoC feeds..." />}>
+                <IoCFeedPanel />
+              </Suspense>
+            )}
+            {ctiSubView === 'map' && (
+              <>
+                <div className="flex-[7] relative">
+                  <Suspense fallback={<LoadingScreen message="Loading threat map..." />}>
+                    <ThreatMap />
+                  </Suspense>
+                </div>
+                <div className="flex-[3] border-l border-white/10 overflow-hidden">
+                  <Suspense fallback={<LoadingScreen message="Loading IoC feeds..." />}>
+                    <IoCFeedPanel />
+                  </Suspense>
+                </div>
+              </>
+            )}
+            {ctiSubView === 'campaigns' && (
+              <Suspense fallback={<LoadingScreen message="Loading campaigns..." />}>
+                <CampaignPanel />
+              </Suspense>
+            )}
+            {ctiSubView === 'actors' && (
+              <Suspense fallback={<LoadingScreen message="Loading actors..." />}>
+                <ActorPanel />
+              </Suspense>
+            )}
+          </div>
+        </div>
+      ) : (
       <div className="flex-1 flex overflow-hidden">
         {/* Map Section (70%) */}
         <div className="flex-[7] relative">
@@ -291,7 +303,7 @@ function App() {
                   <p className="text-xs text-gray-400">{error}</p>
                 </div>
                 <button
-                  onClick={fetchData}
+                  onClick={() => fetchData()}
                   className="ml-auto px-3 py-1 text-xs bg-neon-red/20 text-neon-red rounded hover:bg-neon-red/30 transition-colors"
                 >
                   Retry
@@ -299,35 +311,34 @@ function App() {
               </div>
             </div>
           )}
-          
-          {/* Stats Overlay */}
+
           <StatsOverlay
             disasters={filteredDisasters}
             weather={weather}
             isVisible={showStats}
           />
-          
+
           <RealWorldMap
             disasters={filteredDisasters}
             weather={weather}
             onSelectEvent={handleSelectEvent}
             selectedEvent={selectedEvent}
-            showWeather={filters.weather}
+            showWeather={filters.weather && persona.showWeatherPanels}
           />
         </div>
 
         {/* Sidebar (30%) */}
         <div className="flex-[3] border-l border-white/10 flex flex-col">
-          {/* Watchlist */}
-          <div className="p-4 border-b border-white/10">
-            <Watchlist
-              weather={weather}
-              disasters={filteredDisasters}
-              onSelectLocation={handleFocusLocation}
-            />
-          </div>
-          
-          {/* Main Sidebar Content */}
+          {persona.showWeatherPanels && (
+            <div className="p-4 border-b border-white/10">
+              <Watchlist
+                weather={weather}
+                disasters={filteredDisasters}
+                onSelectLocation={handleFocusLocation}
+              />
+            </div>
+          )}
+
           <div className="flex-1 overflow-hidden">
             {sidebarView === 'list' ? (
               <Sidebar
@@ -335,7 +346,7 @@ function App() {
                 weather={weather}
                 selectedEvent={selectedEvent}
                 onSelectEvent={handleSelectEvent}
-                showWeather={filters.weather}
+                showWeather={filters.weather && persona.showWeatherPanels}
               />
             ) : (
               <TimelineView
@@ -347,6 +358,7 @@ function App() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Footer */}
       <Footer />
@@ -354,11 +366,11 @@ function App() {
       {/* Notifications */}
       <NotificationToast
         notifications={notifications}
-        onDismiss={handleDismissNotification}
-        onDismissAll={handleDismissAllNotifications}
+        onDismiss={dismiss}
+        onDismissAll={dismissAll}
         onSelectEvent={handleSelectEvent}
         soundEnabled={settings.soundEnabled}
-        onToggleSound={() => handleUpdateSettings({ soundEnabled: !settings.soundEnabled })}
+        onToggleSound={() => updateSettings({ soundEnabled: !settings.soundEnabled })}
       />
 
       {/* Modals */}
@@ -366,7 +378,7 @@ function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
-        onUpdateSettings={handleUpdateSettings}
+        onUpdateSettings={updateSettings}
       />
 
       <ExportModal
@@ -377,11 +389,15 @@ function App() {
         selectedEvent={selectedEvent}
       />
 
-      <WeatherCompare
-        weather={weather}
-        isOpen={showWeatherCompare}
-        onClose={() => setShowWeatherCompare(false)}
-      />
+      {persona.showWeatherPanels && (
+        <Suspense fallback={null}>
+          <WeatherCompare
+            weather={weather}
+            isOpen={showWeatherCompare}
+            onClose={() => setShowWeatherCompare(false)}
+          />
+        </Suspense>
+      )}
 
       <DisasterTrends
         disasters={filteredDisasters}
@@ -389,12 +405,14 @@ function App() {
         onClose={() => setShowTrends(false)}
       />
 
-      <Globe3D
-        disasters={filteredDisasters}
-        isOpen={showGlobe}
-        onClose={() => setShowGlobe(false)}
-        onSelectDisaster={handleSelectEvent}
-      />
+      <Suspense fallback={null}>
+        <Globe3D
+          disasters={filteredDisasters}
+          isOpen={showGlobe}
+          onClose={() => setShowGlobe(false)}
+          onSelectDisaster={handleSelectEvent}
+        />
+      </Suspense>
     </div>
   );
 }
