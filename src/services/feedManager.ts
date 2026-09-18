@@ -11,6 +11,7 @@ import { parseMalwareBazaar } from './feeds/malwareBazaar';
 import { parseOTX } from './feeds/alienvaultOtx';
 import { parseGreyNoise } from './feeds/greyNoise';
 import { parseDarkfield } from './feeds/darkfield';
+import { enforceIocValidation } from './validateIoc';
 
 export const FEED_SOURCES: FeedSource[] = [
   {
@@ -188,7 +189,10 @@ export async function fetchAllFeeds(
 ): Promise<{ results: FeedResult[]; allIoCs: IoC[] }> {
   const enabled = sources.filter(s => s.enabled);
   const results = await Promise.all(enabled.map(s => fetchFeed(s, signal)));
-  const allIoCs = results.flatMap((r: FeedResult) => r.iocs);
+  // Security: every IoC comes from an untrusted third-party feed. Validate
+  // values against their declared types before anything downstream
+  // (dedup, correlation, geo enrichment, URL building) can consume them.
+  const allIoCs = enforceIocValidation(results.flatMap((r: FeedResult) => r.iocs));
   return { results, allIoCs };
 }
 

@@ -1,5 +1,6 @@
 import { X, Copy, Shield, Globe, Hash, Calendar, Tag, ExternalLink } from 'lucide-react';
 import type { IoC } from '../types/cti';
+import { sanitizeIocUrl } from '../services/validateIoc';
 
 const THREAT_STYLES: Record<string, string> = {
   critical: 'bg-neon-red/15 text-neon-red border-neon-red/30',
@@ -26,12 +27,18 @@ export function IoCDetailDrawer({ ioc, onClose }: IoCDetailDrawerProps) {
     await navigator.clipboard.writeText(ioc.value);
   };
 
-  const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(ioc.value)}`;
-  const virustotalUrl = ioc.type.startsWith('sha') || ioc.type === 'md5'
-    ? `https://www.virustotal.com/gui/file/${ioc.value}`
-    : `https://www.virustotal.com/gui/search/${encodeURIComponent(ioc.value)}`;
+  // Security: ioc.value is untrusted feed data. Every outbound URL is built
+  // with encodeURIComponent (or structural regex-validated for hashes/IPs)
+  // and re-parsed through sanitizeIocUrl, which only permits http(s) — so a
+  // crafted value can never yield a javascript:/data: link.
+  const googleSearchUrl = sanitizeIocUrl(`https://www.google.com/search?q=${encodeURIComponent(ioc.value)}`) ?? '';
+  const virustotalUrl = sanitizeIocUrl(
+    ioc.type.startsWith('sha') || ioc.type === 'md5'
+      ? `https://www.virustotal.com/gui/file/${ioc.value}`
+      : `https://www.virustotal.com/gui/search/${encodeURIComponent(ioc.value)}`
+  ) ?? '';
   const abuseipdbUrl = (ioc.type === 'ipv4' || ioc.type === 'ipv6')
-    ? `https://www.abuseipdb.com/check/${ioc.value}`
+    ? sanitizeIocUrl(`https://www.abuseipdb.com/check/${ioc.value}`)
     : null;
 
   return (
@@ -151,6 +158,7 @@ function DetailField({ icon: Icon, label, value }: { icon: React.ComponentType<{
 }
 
 function ExternalLinkButton({ href, label }: { href: string; label: string }) {
+  if (!href) return null;
   return (
     <a
       href={href}

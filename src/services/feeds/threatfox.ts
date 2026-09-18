@@ -2,6 +2,7 @@
 // https://threatfox-api.abuse.ch/api/v1/
 
 import type { IoC } from '../../types/cti';
+import { isWellFormedIoc, isValidIpv4, isValidIpv6, isValidDomain } from '../validateIoc';
 
 interface ThreatFoxIoC {
   id: string;
@@ -39,7 +40,18 @@ export function parseThreatFox(response: ThreatFoxResponse): IoC[] {
   for (const entry of response.data) {
     if (!entry.ioc) continue;
 
-    const type = TYPE_MAP[entry.ioc_type] || TYPE_MAP[entry.threat_type] || 'ipv4';
+    // Infer the IoC type from the mapped feed type, falling back to a
+    // structural guess of the raw value — never blindly assume ipv4, or a
+    // mislabeled value would flow into IP-specific UI/URL paths.
+    let type = TYPE_MAP[entry.ioc_type] || TYPE_MAP[entry.threat_type];
+    if (!type) {
+      if (isValidIpv4(entry.ioc)) type = 'ipv4';
+      else if (isValidIpv6(entry.ioc)) type = 'ipv6';
+      else if (isValidDomain(entry.ioc)) type = 'domain';
+      else continue; // unusable value of unknown type — drop
+    } else if (!isWellFormedIoc(type, entry.ioc)) {
+      continue; // declared type doesn't match the actual value — drop
+    }
     const confidence = entry.confidence_level >= 80 ? 'high'
       : entry.confidence_level >= 50 ? 'medium' : 'low';
 
