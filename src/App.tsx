@@ -95,7 +95,7 @@ function App() {
     }
   }, [markAsRead]);
 
-  const handleFocusLocation = (_coords: [number, number]) => {
+  const handleFocusLocation = () => {
     // TODO: wire mapFocusCoords to RealWorldMap once focus is implemented
   };
 

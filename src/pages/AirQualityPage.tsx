@@ -139,6 +139,11 @@ export const AirQualityPage: React.FC = () => {
   };
 
   const fetchAllAQI = useCallback(async () => {
+    // Yield before the first state update: this runs inside a mount effect, and
+    // synchronous setState there would trigger cascading renders
+    // (react-hooks/set-state-in-effect). One microtask keeps it out of the
+    // effect's sync window.
+    await Promise.resolve();
     setLoading(true);
     setLoadingProgress(0);
     setApiError(false);
@@ -202,7 +207,11 @@ export const AirQualityPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    fetchAllAQI();
+    // Defer via timeout: keeps the effect's synchronous body free of
+    // setState calls (react-hooks/set-state-in-effect) and cancels cleanly
+    // if the page unmounts before fetching starts.
+    const t = setTimeout(fetchAllAQI, 0);
+    return () => clearTimeout(t);
   }, [fetchAllAQI]);
 
   const filteredData = aqiData.filter(d => {

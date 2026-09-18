@@ -36,22 +36,20 @@ export const Watchlist: React.FC<WatchlistProps> = ({
   disasters,
   onSelectLocation,
 }) => {
-  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>(() => {
+    // Lazy initializer: load persisted watchlist synchronously at mount
+    // instead of setting state from an effect (avoids cascading renders).
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? (JSON.parse(saved) as WatchlistItem[]) : [];
+    } catch {
+      // Invalid data — start empty
+      return [];
+    }
+  });
   const [isExpanded, setIsExpanded] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-
-  // Load watchlist from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        setWatchlist(JSON.parse(saved));
-      } catch {
-        // Invalid data
-      }
-    }
-  }, []);
 
   // Save watchlist to localStorage
   useEffect(() => {
@@ -61,7 +59,7 @@ export const Watchlist: React.FC<WatchlistProps> = ({
   const addToWatchlist = (item: Omit<WatchlistItem, 'id' | 'addedAt' | 'notifyOnDisaster'>) => {
     const newItem: WatchlistItem = {
       ...item,
-      id: `${item.type}-${Date.now()}`,
+      id: `${item.type}-${crypto.randomUUID()}`,
       addedAt: new Date().toISOString(),
       notifyOnDisaster: true,
     };
