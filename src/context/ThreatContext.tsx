@@ -40,6 +40,7 @@ export interface UserSettings {
 }
 
 const SETTINGS_STORAGE_KEY = 'thor_settings_v1';
+const MIN_REFRESH_INTERVAL = 30; // seconds
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -55,8 +56,17 @@ function loadSettings(): UserSettings {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw) as Partial<UserSettings>;
-    // Merge over defaults so new fields added later stay valid
-    return { ...DEFAULT_SETTINGS, ...parsed };
+    // Merge over defaults so new fields added later stay valid, then sanitize
+    // (localStorage is user-editable; a bad interval would hammer the feeds)
+    const merged = { ...DEFAULT_SETTINGS, ...parsed };
+    const interval = Number(merged.refreshInterval);
+    merged.refreshInterval = Number.isFinite(interval)
+      ? Math.min(Math.max(interval, MIN_REFRESH_INTERVAL), 86400)
+      : DEFAULT_SETTINGS.refreshInterval;
+    if (!['low', 'medium', 'high', 'critical'].includes(merged.minSeverityNotification)) {
+      merged.minSeverityNotification = DEFAULT_SETTINGS.minSeverityNotification;
+    }
+    return merged;
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -161,15 +171,25 @@ export const ThreatProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   // Notification audio
   useEffect(() => {
-    audioRef.current = new Audio(NOTIFICATION_SOUND);
-    audioRef.current.preload = 'auto';
+    const audio = new Audio(NOTIFICATION_SOUND);
+    audio.preload = 'auto';
+    audioRef.current = audio;
+    return () => {
+      audio.pause();
+      audioRef.current = null;
+    };
   }, []);
 
-  const refresh = useCallback(async () => {
+  // Single in-flight refresh: overlapping calls (interval + manual click)
+  // share one request so stale results can't overwrite newer ones.
+  const inflightRef = useRef<Promise<void> | null>(null);
+
+  const doRefresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const result = await fetchThreatFeeds();
+      const anyFeedFailed = Object.values(result.feedStatus).some(st => st === 'error');
 
       // New-event detection for notifications
       const s = settingsRef.current;
@@ -193,7 +213,12 @@ export const ThreatProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           }
         }
       }
-      previousEventIds.current = new Set(result.events.map(e => e.id));
+      // If a feed failed, its events are missing from this snapshot. Keep the
+      // previously-seen IDs so they aren't announced as "new" on recovery.
+      const currentIds = result.events.map(e => e.id);
+      previousEventIds.current = anyFeedFailed
+        ? new Set([...previousEventIds.current, ...currentIds])
+        : new Set(currentIds);
 
       setEvents(result.events);
       setCves(result.cves);
@@ -208,6 +233,15 @@ export const ThreatProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       setLoading(false);
     }
   }, []);
+
+  const refresh = useCallback((): Promise<void> => {
+    if (inflightRef.current) return inflightRef.current;
+    const p = doRefresh().finally(() => {
+      inflightRef.current = null;
+    });
+    inflightRef.current = p;
+    return p;
+  }, [doRefresh]);
 
   // Initial fetch — runs once, independent of refresh settings so changing
   // the interval doesn't trigger a redundant immediate refetch.
@@ -242,8 +276,9 @@ export const ThreatProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       setSelectedEvent(match);
       setDeepLinkApplied(true);
       // Strip the param so a manual refresh doesn't re-trigger
-      searchParams.delete('event');
-      setSearchParams(searchParams, { replace: true });
+      const next = new URLSearchParams(searchParams);
+      next.delete('event');
+      setSearchParams(next, { replace: true });
     }
   }, [events, searchParams, setSearchParams, deepLinkApplied]);
 
@@ -272,9 +307,15 @@ export const ThreatProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setSettings(prev => ({ ...prev, ...patch }));
   }, []);
 
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+  }, []);
+
   const focusMapLocation = useCallback((coords: [number, number]) => {
     setMapFocusCoords(coords);
-    setTimeout(() => setMapFocusCoords(null), 100);
+    if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+    focusTimerRef.current = setTimeout(() => setMapFocusCoords(null), 100);
   }, []);
 
   const filteredEvents = useMemo(

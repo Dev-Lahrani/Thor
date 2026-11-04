@@ -105,3 +105,68 @@ describe('normalizeNvdCve', () => {
     expect(normalizeNvdCveForTest(item)).toBeNull();
   });
 });
+
+import { vi, beforeEach, afterEach } from 'vitest';
+import { scatterCoordinates, clearFeedCache, fetchBreaches, fetchC2Ips } from './api';
+
+describe('scatterCoordinates', () => {
+  it('is deterministic and within bounds', () => {
+    const a = scatterCoordinates('CVE-2026-1234');
+    expect(scatterCoordinates('CVE-2026-1234')).toEqual(a);
+    expect(a[0]).toBeGreaterThanOrEqual(-170);
+    expect(a[0]).toBeLessThan(170);
+    expect(a[1]).toBeGreaterThanOrEqual(-60);
+    expect(a[1]).toBeLessThan(60);
+  });
+
+  it('spreads latitude across IDs (regression: all KEVs shared one latitude)', () => {
+    const lats = new Set(
+      Array.from({ length: 50 }, (_, i) => scatterCoordinates(`CVE-2025-${1000 + i}`)[1])
+    );
+    expect(lats.size).toBeGreaterThan(10);
+  });
+});
+
+describe('feed failure handling', () => {
+  beforeEach(() => clearFeedCache());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('rejects (not []) when HIBP is down, and does not cache the failure', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 503 });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(fetchBreaches()).rejects.toThrow();
+
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => [{ Name: 'X', Title: 'X', Domain: '', BreachDate: '2026-01-01', AddedDate: '2026-01-02', PwnCount: 1, Description: null, DataClasses: [] }],
+    });
+    const rows = await fetchBreaches();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].description).toBe('');
+  });
+
+  it('rejects when every Feodo path fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('net')));
+    await expect(fetchC2Ips()).rejects.toThrow();
+  });
+
+  it('de-duplicates concurrent requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [] });
+    vi.stubGlobal('fetch', fetchMock);
+    await Promise.all([fetchBreaches(), fetchBreaches()]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('cisaExploitPoc', () => {
+  it('is driven by cisaExploitAdd, not sourceIdentifier', () => {
+    const item: NvdCveItem = {
+      cve: {
+        id: 'CVE-2026-1', sourceIdentifier: 'nvd@nist.gov', cisaExploitAdd: '2026-01-01',
+        published: '', lastModified: '', descriptions: [],
+        metrics: { cvssMetricV31: [{ cvssData: { baseScore: 5, baseSeverity: 'MEDIUM', vectorString: 'v' } }] },
+      },
+    };
+    expect(normalizeNvdCveForTest(item)!.cisaExploitPoc).toBe(true);
+  });
+});

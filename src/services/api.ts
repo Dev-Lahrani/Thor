@@ -46,16 +46,56 @@ interface CacheEntry<T> {
 }
 
 const cache = new Map<string, CacheEntry<unknown>>();
+const inflight = new Map<string, Promise<unknown>>();
 
+/**
+ * TTL cache with in-flight de-duplication. Fetchers must THROW on failure:
+ * rejections are never cached, so a transient outage can't blank a feed for
+ * the whole TTL, and callers (see fetchThreatFeeds) can report feed errors.
+ */
 function cached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.timestamp < ttlMs) {
     return Promise.resolve(hit.data as T);
   }
-  return fetcher().then(data => {
-    cache.set(key, { data, timestamp: Date.now() });
-    return data;
-  });
+  const pending = inflight.get(key);
+  if (pending) return pending as Promise<T>;
+
+  const p = fetcher()
+    .then(data => {
+      cache.set(key, { data, timestamp: Date.now() });
+      return data;
+    })
+    .finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
+
+/** Test hook: clear cached feed data. */
+export function clearFeedCache(): void {
+  cache.clear();
+  inflight.clear();
+}
+
+/** Stable 32-bit FNV-1a hash. */
+function fnv1a(str: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/**
+ * Deterministic pseudo-location for records with no geolocation (CVE/KEV).
+ * Lon in [-170, 170), lat in [-60, 60). Callers must flag approxLocation.
+ */
+export function scatterCoordinates(id: string): [number, number] {
+  const h = fnv1a(id);
+  const lon = (h % 340) - 170;
+  const lat = (fnv1a(`lat:${id}`) % 120) - 60;
+  return [lon, lat];
 }
 
 /**
@@ -127,24 +167,35 @@ function alertFromSeverity(sev: SeverityLevel): 'green' | 'yellow' | 'orange' | 
 // NVD — recent CVEs (last N days, CVSS scored)
 // ------------------------------------------------------------
 
+const NVD_MAX_PAGES = 3;
+
 export async function fetchRecentCves(days = 3, maxResults = 150): Promise<CveRecord[]> {
   return cached(`nvd-${days}-${maxResults}`, 15 * 60 * 1000, async () => {
     const end = new Date();
     const start = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const fmt = (d: Date) => d.toISOString().replace(/\.\d+Z$/, '+00:00');
-    const url = `${NVD_API}?pubStartDate=${encodeURIComponent(fmt(start))}&pubEndDate=${encodeURIComponent(fmt(end))}&resultsPerPage=${maxResults}`;
+    const base = `${NVD_API}?pubStartDate=${encodeURIComponent(fmt(start))}&pubEndDate=${encodeURIComponent(fmt(end))}&resultsPerPage=${maxResults}`;
 
-    try {
-      const res = await fetch(url);
-      if (!res.ok) return [];
+    // Paginate (capped — unauthenticated NVD allows ~5 requests / 30s)
+    const items: NvdCveItem[] = [];
+    let startIndex = 0;
+    for (let page = 0; page < NVD_MAX_PAGES; page++) {
+      const res = await fetch(`${base}&startIndex=${startIndex}`);
+      if (!res.ok) {
+        if (page > 0) break; // keep what we already have
+        throw new Error(`NVD HTTP ${res.status}`);
+      }
       const data = await res.json();
-      return (data.vulnerabilities || [])
-        .map((item: NvdCveItem) => normalizeNvdCve(item))
-        .filter((c: CveRecord | null): c is CveRecord => c !== null);
-    } catch (err) {
-      console.error('[Thor] NVD fetch failed:', err);
-      return [];
+      const batch: NvdCveItem[] = Array.isArray(data.vulnerabilities) ? data.vulnerabilities : [];
+      items.push(...batch);
+      startIndex += batch.length;
+      const total = typeof data.totalResults === 'number' ? data.totalResults : 0;
+      if (batch.length === 0 || startIndex >= total) break;
     }
+
+    return items
+      .map(item => normalizeNvdCve(item))
+      .filter((c): c is CveRecord => c !== null);
   });
 }
 
@@ -208,7 +259,7 @@ export function normalizeNvdCve(item: NvdCveItem): CveRecord | null {
     cvssVector,
     severity,
     attackVector,
-    cisaExploitPoc: /CISA-EXPLOIT-POC|KEV/i.test(cve.sourceIdentifier || ''),
+    cisaExploitPoc: Boolean(cve.cisaExploitAdd),
     references: (cve.references || []).map(r => r.url).slice(0, 5),
     vendors: [...vendors].slice(0, 6),
     cwe: cve.weaknesses?.[0]?.description?.[0]?.value,
@@ -225,18 +276,21 @@ const KEV_MAX_AGE_DAYS = 180;
 export async function fetchKevEntries(): Promise<KevEntry[]> {
   return cached('kev', 30 * 60 * 1000, async () => {
     const parse = (raw: unknown): KevCatalog | null => {
-      if (raw && typeof raw === 'object' && 'vulnerabilities' in raw) {
+      if (
+        raw && typeof raw === 'object' &&
+        Array.isArray((raw as { vulnerabilities?: unknown }).vulnerabilities)
+      ) {
         return raw as KevCatalog;
       }
       return null;
     };
 
     const catalog = await relayFetch<KevCatalog>(KEV_FEED, parse);
-    if (!catalog) return [];
+    if (!catalog) throw new Error('KEV feed unavailable');
 
     const cutoff = Date.now() - KEV_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
     return catalog.vulnerabilities
-      .filter(v => new Date(v.dateAdded).getTime() >= cutoff)
+      .filter(v => v && typeof v.cveID === 'string' && new Date(v.dateAdded).getTime() >= cutoff)
       .sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime())
       .map(v => ({
         cveID: v.cveID,
@@ -264,12 +318,20 @@ export async function fetchC2Ips(): Promise<IocIndicator[]> {
       Array.isArray(raw) ? (raw as FeodoEntry[]) : null;
 
     const entries = await relayFetch<FeodoEntry[]>(FEODO_FEED, parse);
-    if (!entries) return [];
+    if (!entries) throw new Error('Feodo feed unavailable');
 
+    // Stable IDs (no array index) so reordering doesn't look like new events
+    const seen = new Set<string>();
     return entries
-      .filter(e => e.ip_address)
-      .map((e, i) => ({
-        id: `feodo-${e.ip_address}-${e.port}-${i}`,
+      .filter(e => e && typeof e.ip_address === 'string' && e.ip_address)
+      .filter(e => {
+        const key = `${e.ip_address}-${e.port}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map(e => ({
+        id: `feodo-${e.ip_address}-${e.port}`,
         type: 'c2-ip' as const,
         value: e.ip_address,
         threat: e.malware || 'Botnet C2',
@@ -309,33 +371,25 @@ function isDshieldSourceArray(raw: unknown): raw is DshieldSource[] {
 
 export async function fetchAttackerIps(): Promise<IocIndicator[]> {
   return cached('dshield', 60 * 60 * 1000, async () => {
-    try {
-      const res = await fetch(DSHIELD_SOURCES);
-      if (!res.ok) return [];
-      const raw: unknown = await res.json();
-      // Guard against unexpected response shapes (e.g. nested payloads) —
-      // a blind cast would produce garbage rows with no error.
-      if (!isDshieldSourceArray(raw)) {
-        console.error('[Thor] DShield: unexpected response shape, skipping');
-        return [];
-      }
-      return (raw as DshieldSource[])
-        .filter(s => s.source)
-        .map(s => ({
-          id: `dshield-${s.source}`,
-          type: 'attacker-ip' as const,
-          value: s.source,
-          threat: 'Network attack source',
-          source: 'DShield' as ThreatSource,
-          firstSeen: s.firstseen,
-          lastSeen: s.lastseen,
-          confidence: 'high' as const,
-          eventCount: s.reports,
-        }));
-    } catch (err) {
-      console.error('[Thor] DShield fetch failed:', err);
-      return [];
-    }
+    const res = await fetch(DSHIELD_SOURCES);
+    if (!res.ok) throw new Error(`DShield HTTP ${res.status}`);
+    const raw: unknown = await res.json();
+    // Guard against unexpected response shapes — a blind cast would produce
+    // garbage rows with no error.
+    if (!isDshieldSourceArray(raw)) throw new Error('DShield: unexpected response shape');
+    return raw
+      .filter(s => s.source)
+      .map(s => ({
+        id: `dshield-${s.source}`,
+        type: 'attacker-ip' as const,
+        value: s.source,
+        threat: 'Network attack source',
+        source: 'DShield' as ThreatSource,
+        firstSeen: s.firstseen,
+        lastSeen: s.lastseen,
+        confidence: 'high' as const,
+        eventCount: s.reports,
+      }));
   });
 }
 
@@ -345,27 +399,22 @@ export async function fetchAttackerIps(): Promise<IocIndicator[]> {
 
 export async function fetchPhishingUrls(limit = 40): Promise<IocIndicator[]> {
   return cached(`openphish-${limit}`, 30 * 60 * 1000, async () => {
-    try {
-      const res = await fetch(OPENPHISH_FEED);
-      if (!res.ok) return [];
-      const text = await res.text();
-      return text
-        .split('\n')
-        .map(l => l.trim())
-        .filter(l => l.startsWith('http'))
-        .slice(0, limit)
-        .map((url, i) => ({
-          id: `openphish-${i}`,
-          type: 'phishing-url' as const,
-          value: url,
-          threat: 'Phishing URL',
-          source: 'OpenPhish' as ThreatSource,
-          confidence: 'high' as const,
-        }));
-    } catch (err) {
-      console.error('[Thor] OpenPhish fetch failed:', err);
-      return [];
-    }
+    const res = await fetch(OPENPHISH_FEED);
+    if (!res.ok) throw new Error(`OpenPhish HTTP ${res.status}`);
+    const text = await res.text();
+    return text
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.startsWith('http'))
+      .slice(0, limit)
+      .map((url, i) => ({
+        id: `openphish-${i}`,
+        type: 'phishing-url' as const,
+        value: url,
+        threat: 'Phishing URL',
+        source: 'OpenPhish' as ThreatSource,
+        confidence: 'high' as const,
+      }));
   });
 }
 
@@ -375,14 +424,16 @@ export async function fetchPhishingUrls(limit = 40): Promise<IocIndicator[]> {
 
 export async function fetchBreaches(): Promise<BreachRecord[]> {
   return cached('hibp', 6 * 60 * 60 * 1000, async () => {
-    try {
+    {
       const res = await fetch(HIBP_API);
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error(`HIBP HTTP ${res.status}`);
+      const json: unknown = await res.json();
+      if (!Array.isArray(json)) throw new Error('HIBP: unexpected response shape');
       const data: Array<{
         Name: string; Title: string; Domain: string; BreachDate: string;
         AddedDate: string; PwnCount: number; Description: string;
         DataClasses: string[]; IsVerified?: boolean; IsSensitive?: boolean;
-      }> = await res.json();
+      }> = json;
 
       return data
         .map(b => ({
@@ -392,15 +443,12 @@ export async function fetchBreaches(): Promise<BreachRecord[]> {
           breachDate: b.BreachDate,
           addedDate: b.AddedDate,
           pwnCount: b.PwnCount,
-          description: b.Description.replace(/<[^>]*>/g, ''),
+          description: (b.Description ?? '').replace(/<[^>]*>/g, ''),
           dataClasses: b.DataClasses || [],
           isVerified: b.IsVerified ?? false,
           isSensitive: b.IsSensitive ?? false,
         }))
         .sort((a, b) => new Date(b.addedDate).getTime() - new Date(a.addedDate).getTime());
-    } catch (err) {
-      console.error('[Thor] HIBP fetch failed:', err);
-      return [];
     }
   });
 }
@@ -416,11 +464,33 @@ interface GeoEntry {
   coordinates?: [number, number];
   asn?: string;
   fetchedAt: number;
+  /** Negative-cache marker: lookup failed; retry after GEO_FAIL_TTL */
+  failed?: boolean;
+}
+
+const GEO_FAIL_TTL = 60 * 60 * 1000; // 1 hour
+
+function isValidGeoEntry(e: unknown): e is GeoEntry {
+  if (!e || typeof e !== 'object') return false;
+  const g = e as GeoEntry;
+  if (typeof g.fetchedAt !== 'number') return false;
+  if (g.failed) return true;
+  return (
+    Array.isArray(g.coordinates) &&
+    g.coordinates.length === 2 &&
+    g.coordinates.every(n => typeof n === 'number' && Number.isFinite(n))
+  );
 }
 
 function loadGeoCache(): Record<string, GeoEntry> {
   try {
-    return JSON.parse(localStorage.getItem(GEO_CACHE_KEY) || '{}');
+    const raw: unknown = JSON.parse(localStorage.getItem(GEO_CACHE_KEY) || '{}');
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const out: Record<string, GeoEntry> = {};
+    for (const [ip, e] of Object.entries(raw)) {
+      if (isValidGeoEntry(e)) out[ip] = e;
+    }
+    return out;
   } catch {
     return {};
   }
@@ -447,8 +517,9 @@ export async function geolocateIps(ips: string[]): Promise<Record<string, GeoEnt
 
   for (const ip of ips) {
     const hit = cacheData[ip];
-    if (hit && Date.now() - hit.fetchedAt < GEO_CACHE_TTL) {
-      result[ip] = hit;
+    const ttl = hit?.failed ? GEO_FAIL_TTL : GEO_CACHE_TTL;
+    if (hit && Date.now() - hit.fetchedAt < ttl) {
+      if (!hit.failed) result[ip] = hit;
     } else {
       toFetch.push(ip);
     }
@@ -460,10 +531,15 @@ export async function geolocateIps(ips: string[]): Promise<Record<string, GeoEnt
     const batch = toFetch.slice(i, i + BATCH);
     const settled = await Promise.allSettled(
       batch.map(async ip => {
-        const res = await fetch(`${GEO_API}/${ip}`);
+        const res = await fetch(`${GEO_API}/${encodeURIComponent(ip)}`);
         if (!res.ok) throw new Error(`geo failed for ${ip}`);
         const data = await res.json();
-        if (data.success === false || !data.latitude || !data.longitude) {
+        // 0 is a valid coordinate — only reject missing/non-numeric values
+        if (
+          data.success === false ||
+          typeof data.latitude !== 'number' ||
+          typeof data.longitude !== 'number'
+        ) {
           throw new Error(`no geo data for ${ip}`);
         }
         return {
@@ -480,12 +556,15 @@ export async function geolocateIps(ips: string[]): Promise<Record<string, GeoEnt
       })
     );
 
-    for (const s of settled) {
+    settled.forEach((s, idx) => {
       if (s.status === 'fulfilled') {
         result[s.value.ip] = s.value.geo;
         cacheData[s.value.ip] = s.value.geo;
+      } else {
+        // Negative-cache so dead/unroutable IPs aren't retried every refresh
+        cacheData[batch[idx]] = { failed: true, fetchedAt: Date.now() };
       }
-    }
+    });
   }
 
   saveGeoCache(cacheData);
@@ -556,10 +635,7 @@ export async function fetchThreatFeeds(): Promise<ThreatFeedResult> {
       title: `${k.cveID} — ${k.vendorProject} ${k.product}`,
       description: k.shortDescription,
       // KEV has no geo — spread across reference positions near vendor-neutral map slots
-      coordinates: [
-        ((k.cveID.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0) % 340) - 170),
-        ((k.cveID.split('').reduce((a, ch) => a + ch.charCodeAt(1) || 7, 0) % 120) - 60),
-      ],
+      coordinates: scatterCoordinates(k.cveID),
       date: k.dateAdded,
       severity: sev,
       alertLevel: alertFromSeverity(sev),
@@ -616,15 +692,12 @@ export async function fetchThreatFeeds(): Promise<ThreatFeedResult> {
   // (CVEs have no geolocation — coordinates are a stable hash-scatter; the
   // approxLocation flag tells the UI to render these as "global pressure")
   for (const cve of cves.filter(c => c.severity === 'critical' || c.severity === 'high').slice(0, 60)) {
-    const hash = cve.id.split('').reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7);
-    const lon = (Math.abs(hash) % 340) - 170;
-    const lat = (Math.abs(hash >> 3) % 120) - 60;
     events.push({
       id: `cve-${cve.id}`,
       category: 'kev',
       title: `${cve.id} — CVSS ${cve.cvssScore.toFixed(1)}`,
       description: cve.description.slice(0, 240),
-      coordinates: [lon, lat],
+      coordinates: scatterCoordinates(cve.id),
       date: cve.published,
       severity: cve.severity,
       alertLevel: cvssToAlert(cve.cvssScore),

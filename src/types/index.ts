@@ -158,6 +158,7 @@ export interface NvdCveItem {
   cve: {
     id: string;
     sourceIdentifier?: string;
+    cisaExploitAdd?: string;
     published: string;
     lastModified: string;
     descriptions: Array<{ lang: string; value: string }>;
