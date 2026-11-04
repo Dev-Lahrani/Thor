@@ -102,7 +102,25 @@ export function scatterCoordinates(id: string): [number, number] {
  * Fetch through a CORS relay with graceful fallback to direct fetch.
  * Used for feeds that don't send access-control-allow-origin.
  */
-async function relayFetch<T>(url: string, validate: (raw: unknown) => T | null): Promise<T | null> {
+async function relayFetch<T>(
+  url: string,
+  validate: (raw: unknown) => T | null,
+  localProxyPath?: string
+): Promise<T | null> {
+  // 0) Same-origin proxy (dev server / preview) — no third party involved
+  if (localProxyPath) {
+    try {
+      const res = await fetch(localProxyPath);
+      const ct = res.headers?.get?.('content-type') ?? '';
+      if (res.ok && ct.includes('json')) {
+        const parsed = validate(await res.json());
+        if (parsed) return parsed;
+      }
+    } catch {
+      /* fall through to relay */
+    }
+  }
+
   // Try relay first (feed lacks CORS headers)
   try {
     const res = await fetch(CORS_RELAY + url);
@@ -285,7 +303,7 @@ export async function fetchKevEntries(): Promise<KevEntry[]> {
       return null;
     };
 
-    const catalog = await relayFetch<KevCatalog>(KEV_FEED, parse);
+    const catalog = await relayFetch<KevCatalog>(KEV_FEED, parse, '/feeds/kev');
     if (!catalog) throw new Error('KEV feed unavailable');
 
     const cutoff = Date.now() - KEV_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
@@ -317,7 +335,7 @@ export async function fetchC2Ips(): Promise<IocIndicator[]> {
     const parse = (raw: unknown): FeodoEntry[] | null =>
       Array.isArray(raw) ? (raw as FeodoEntry[]) : null;
 
-    const entries = await relayFetch<FeodoEntry[]>(FEODO_FEED, parse);
+    const entries = await relayFetch<FeodoEntry[]>(FEODO_FEED, parse, '/feeds/feodo');
     if (!entries) throw new Error('Feodo feed unavailable');
 
     // Stable IDs (no array index) so reordering doesn't look like new events
